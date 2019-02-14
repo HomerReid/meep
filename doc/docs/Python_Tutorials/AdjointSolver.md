@@ -2,7 +2,7 @@
 # Automated design optimization via adjoint sensitivity analysis
 ---
 
-This tutorial demonstrates the use of meep's support for
+This tutorial demonstrates the use of <span class=SC>meep's</span> support for
 [*adjoint sensitivity analysis*](https://en.wikipedia.org/wiki/Adjoint_state_method)
 to facilitate automated design optimization via derivative-based
 numerical optimization.
@@ -16,23 +16,10 @@ recalling the bird's-eye view of
 ### Photonic design optimization: Common problem structure and simple examples
 
 The problems we'll consider all have the following common
-general structure: We are given an early-stage draft of a
-photonic device design in which some features are fixed 
-and immutable, but 
-
----which, for our purposes, amounts
-to a description of the spatially-varying scalar permittivity
-function $\epsilon(\mathbf{x})$ throught
-
-
-we excite it 
-
-and compute
-
-where a ``device design'' amounts
-
-kklsp$k
-We excite
+general structure: We are given a <span class=SC>meep</span> simulation
+geometry---consisting of a material
+$\epsilon(\mathbf x)$, an incident field or other excitation source,
+and one or more `dft_flux` regions---
 
 ### Specifying objective regions and defining objective functions
  
