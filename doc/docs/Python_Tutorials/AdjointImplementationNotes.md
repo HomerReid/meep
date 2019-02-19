@@ -421,3 +421,13 @@ Differentiating and rearranging slightly, we have
                     +\cdots
               \right\}
 \end{align*}
+
+### Mode coefficient
+
+$$ \alpha_m^\pm = C_1 \pm C_2 $$
+\begin{align*}
+ C_1 &=\frac{1}{\mathcal{N}}
+   \int_{\mc S\sup{obj}} \Big(e^*_y H_z - e^*_z H_y\Big)d\mathbf{x}\\
+ C_2 &=
+   \frac{1}{\mathcal{N}}\int_{\mc S\sup{obj}} \Big(h^*_z E_y - h^*_y E_z\Big)d\mathbf{x}\\
+\end{align*}
