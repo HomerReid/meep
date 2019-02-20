@@ -1650,9 +1650,17 @@ class Simulation(object):
          self.fields.get_array_metadata(v, xtics, ytics, ztics, weights, collapse)
          return (xtics,ytics,ztics,np.reshape(weights,dims[np.nonzero(dims)]))
 
-    def get_dft_array_metadata(self, dft_cell=None, vol=None, center=None, size=None):
-         return self.get_array_metadata(vol=dft_cell.where if dft_cell is not None else vol,
-                                        center=center, size=size, collapse=True)
+    def get_dft_array_metadata(self, dft_cell=None, vol=None, center=mp.Vector3(), size=None):
+        if dft_cell and len(dft_cell.regions)>1:
+            warn_fmt = "get_dft_array_metadata: dft_cell has {} regions, ignoring all but 1"
+            warnings.warn(warn_fmt.format(len(dft_cell.regions)), RuntimeWarning)
+        if dft_cell:
+            center,size =  dft_cell.regions[0].center, dft_cell.regions[0].size
+        elif vol:
+            center,size =  vol.center, vol.size
+        elif size is None:
+            size=self.cell_size
+        return self.get_array_metadata(center=center, size=size, collapse=True)
 
     def get_eigenmode_coefficients(self, flux, bands, eig_parity=mp.NO_PARITY, eig_vol=None,
                                    eig_resolution=0, eig_tolerance=1e-12, kpoint_func=None, verbose=False):
