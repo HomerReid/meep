@@ -310,7 +310,6 @@ class GeometricObject(object):
 
         self.material = material
         self.center = center
-        self.size   = mp.get_geometric_object_size(self) # size of bounding box
 
     def __contains__(self, point):
         return mp.is_point_in_object(point, self)

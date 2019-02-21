@@ -69,7 +69,6 @@ using namespace meep_geom;
 extern boolean point_in_objectp(vector3 p, GEOMETRIC_OBJECT o);
 extern boolean point_in_periodic_objectp(vector3 p, GEOMETRIC_OBJECT o);
 void display_geometric_object_info(int indentby, GEOMETRIC_OBJECT o);
-vector3 get_geometric_object_size(GEOMETRIC_OBJECT o);
 
 %}
 
@@ -493,13 +492,6 @@ void _get_eigenmode(meep::fields *f, double omega_src, meep::direction d, const 
 }
 #endif
 
-vector3 get_geometric_object_size(GEOMETRIC_OBJECT o)
-{ 
-  geom_box box;
-  geom_get_bounding_box(o, &box);
-  return vector3_minus(box.high, box.low);
-}
-
 %}
 /***************************************************************/
 /* end of inline C/C++ functions     ***************************/
@@ -611,12 +603,6 @@ meep::volume_list *make_volume_list(const meep::volume &v, int c,
     if(!pyv3_to_v3($input, &$1)) {
         SWIG_fail;
     }
-}
-
-// this is needed for get_geometric_object_size
-%typemap(out) vector3 {
-  $result = v3_to_pyv3(&$1);
-  if (!$result) SWIG_fail;
 }
 
 // Typemap suite for GEOMETRIC_OBJECT
@@ -1293,7 +1279,6 @@ void _get_eigenmode(meep::fields *f, double omega_src, meep::direction d, const 
 extern boolean point_in_objectp(vector3 p, GEOMETRIC_OBJECT o);
 extern boolean point_in_periodic_objectp(vector3 p, GEOMETRIC_OBJECT o);
 void display_geometric_object_info(int indentby, GEOMETRIC_OBJECT o);
-vector3 get_geometric_object_size(GEOMETRIC_OBJECT o);
 kpoint_list get_eigenmode_coefficients_and_kpoints(meep::fields *f, meep::dft_flux flux,
                                                    const meep::volume &eig_vol, int *bands, int num_bands,
                                                    int parity, double eig_resolution, double eigensolver_tol,
