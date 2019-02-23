@@ -1,5 +1,5 @@
 <!----------------------------------------------------->
-<!------- LaTeX macros, used on this page only -------->
+<!- LaTeX macros used only in adjoint documentation   ->
 <!----------------------------------------------------->
 $$
    \newcommand{\vb}{\mathbf}

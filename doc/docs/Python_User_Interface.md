@@ -83,6 +83,8 @@ Holds the default material that is used for points not in any object of the geom
 —
 A Python function that takes a `Vector3` and returns a `Medium`. See also [Medium](#medium). Defaults to `None`.
 
+<a name="eps_func"></a>
+
 **`epsilon_func` [ function ]**
 —
 A Python function that takes a `Vector3` and returns the dielectric constant at that point. See also [Medium](#medium). Defaults to `None`.
@@ -949,6 +951,8 @@ Given a list of field components `cs`, compute the Fourier transform of these fi
 —
 Given a `direction` constant, and a `mp.Volume`, returns the flux (the integral of $\Re [\mathbf{E}^* \times \mathbf{H}]$) in that volume. Most commonly, you specify a volume that is a plane or a line, and a direction perpendicular to it, e.g. `flux_in_box(d=mp.X,mp.Volume(center=mp.Vector3(0,0,0),size=mp.Vector3(0,1,1)))`. If the `center` and `size` arguments are provided instead of `box`, Meep will construct the appropriate volume for you.
 
+<a name="energy"></a>
+
 **`electric_energy_in_box(box=None, center=None, size=None)`**
 —
 Given a `mp.Volume`, returns the integral of the electric-field energy $\mathbf{E}^* \cdot \mathbf{D}/2$ in the given volume. If the volume has zero size along a dimension, a lower-dimensional integral is used. If the `center` and `size` arguments are provided instead of `box`, Meep will construct the appropriate volume for you.
@@ -1498,6 +1502,8 @@ For convenience, the following wrappers for `get_array` over the entire cell are
 **`get_dft_array(dft_obj, component, num_freq)`**
 —
 Returns the Fourier-transformed fields as a NumPy array.
+
+<a name="dft_obj"></a>
 
 + `dft_obj`: a `dft_flux`, `dft_force`, `dft_fields`, or `dft_near2far` object obtained from calling the appropriate `add` function (e.g., `mp.add_flux`).
 

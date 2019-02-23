@@ -1,14 +1,142 @@
+<!----------------------------------------------------->
+<!- LaTeX macros used only for adjoint documentation  ->
+<!----------------------------------------------------->
+$$
+   \newcommand{\vb}{\mathbf}
+   \newcommand{\wt}{\widetilde}
+   \newcommand{\mc}{\mathcal}
+   \newcommand{\bmc}[1]{\boldsymbol{\mathcal{#1}}}
+   \newcommand{\sup}[1]{^{\text{#1}}}
+   \newcommand{\pard}[2]{\frac{\partial #1}{\partial #2}}
+   \newcommand{\VMV}[3]{ \Big\langle #1 \Big| #2 \Big| #3 \Big\rangle}
+$$
+
 ---
-# Automated design optimization via adjoint sensitivity analysis
+# Automated design optimization via adjoint-based sensitivity analysis
 ---
 
-This tutorial demonstrates the use of <span class=SC>meep's</span> support for
-[*adjoint sensitivity analysis*](https://en.wikipedia.org/wiki/Adjoint_state_method)
+This tutorial introduces <span class=SC>meep</span>'s implementation
+of [*adjoint-based sensitivity analysis*](https://en.wikipedia.org/wiki/Adjoint_state_method)
 to facilitate automated design optimization via derivative-based
-numerical optimization.
+numerical optimizers.
 
-## Overview and Invitation
+## Overview
 --------------------------------
+
+### Geometry optimization in computational electromagnetism
+
+Many applications of classical electromagnetism
+in modern science and engineering require
+custom-engineered structures---for photonic devices,
+microwave antennas, diffraction gratings, or other
+functional components---in which the design of the
+material geometry must be carefully tuned to achieve
+optimal performance according to some application-specific
+evaluation metric. In the problems we will
+consider, the tunable design variable
+will be the distribution of dielectric material
+in some subregion of a device or other
+geometry---characterized by the spatially varying
+scalar permittivity function
+$\epsilon^\sup{des}(\mathbf x)$ in that
+subregion---and our objective will
+typically be to maximize or minimize one or more
+power fluxes, mode-expansion coefficients, or
+other similar performance benchmarks defined
+in terms of the electromagnetic fields
+in some subregion of our geometry.
+
+!!! note More general materials
+    Although for simplicity we focus here on
+    the case of isotropic, non-magnetic materials,
+    the adjoint solver is also capable of optimizing
+    geometries involving permeable ($\mu\ne 1$)
+    and anisotropic
+    ($\boldsymbol{\epsilon},\boldsymbol{\mu}$ tensor-valued)
+    media.
+
+### Simple examples of optimization problems
+
+By way of immediate example,
+throughout this tutorial we will
+consider a collection of simple, prototypical
+optimization problems as running examples
+to illustrate the mechanics of optimization
+in <span class=SC>meep</span>. Our sample
+set includes
+
+### Common elements of optimization geometries: Objective regions, objective functions, design regions, basis sets
+
+The examples above, distinct though they all are, illustrate
+some common features that will be present in every
+<span class=SC>meep</span> optimization problem:
+
++   One or more [regions over which to tabulate frequency-domain fields (DFT cells)](Python_User_Interface.md#dft_obj) for use in computing power fluxes, mode-expansion coefficients, and other frequency-domain quantities used in characterizing device performance.  Because these regions are used to evaluate objective functions, we refer to them as *objective regions.* 
+
+!!! note Objective regions may or may not have zero thickness 
+    In the examples above, it happens that all objective regions are one-dimensional
+    (zero-thickness) flux monitors, indicated by magenta lines; in a 3D geometry they
+    would be two-dimensional flux planes, still of zero thickness in the normal 
+    direction.  However, objective regions may also be of nonzero thickness, as for
+    instance if the objective function involves the [field energy in a box-shaped
+    subregion of a geometry.](Python_User_Interface.md#energy)
+
++    A specification of which quantities (power fluxes, mode coefficients, energies, etc.) 
+     are to be computed for each objective region, and of how those quantities are to be
+     crunched mathematically to yield a single number measuring device performance. We
+     refer to the individual quantities as *objective quantities*, while the overall
+     function that inputs multiple objective quantities and outputs a single numerical
+     score is the *objective function.*
+     For example,
+
++   A specification of the region over which the material design is to be
+    optimized, i.e. the region in which the permittivity is given by the
+    design quantity $\epsilon\sup{des}(\mathbf x)$.
+    We refer to this as the *design region* $\mathcal{V}\sup{des}$.
+    (In some problems the design region may be a union of two or more
+    disconnected subregions, i.e. if we are trying to optimize the
+    $\epsilon$ distribution in two or more separated subregions of 
+    the geometry.)
+
++   Because the design variable $\epsilon\sup{des}(\mathbf x)$
+    is a continuous function defined throughout a finite volume of space,
+    technically it involves infinitely many degrees of freedom.
+    To yield a finite-dimensional optimization problem, it is convenient
+    to approximate $\epsilon\sup{des}$ as a finite expansion in some
+    convenient set of basis functions, i.e.
+    $$ \epsilon(\mathbf x) \equiv \sum_{n=1}^N \beta_n \mathcal{b}_n(\mathbf x),
+       \qquad \mathbf x\in \mathcal{V}\sup{des},
+    $$
+    where $\{\mathcal{b}_n(\mathbf x)\} is a set of $N$ scalar-valued
+    basis functions defined for $\mathbf x\in\mathcal{V}\sup{des}$.
+    For adjoint optimization in <span class=SC>meep</span>, the
+    basis set is chosen by the user (either from among a predefined collection of
+    common basis sets, or as an arbitrary user-defined set),
+    and the task of the optimizer becomes to determine
+    numerical values for the $N$-vector of coefficients 
+    $\boldsymbol{\beta}=\{\beta_n\},n=1,\cdots,N.$
+    
+
+### Adjoint-based optimization
+
+Given an optimization geometry and a trial candidate for the
+design function [call it
+$\epsilon\sup{trial}(\mathbf{x})$], it's easy enough to see
+how we might use <span class=SC>meep</span> to evaluate
+our objective function---just create a
+<span class=SC>meep</span> simulation
+with $\epsilon\sup{trial}$ as a
+[spatially-varying permittivity function](Python_User_Interface.md#eps_func),
+timestep to accumulate frequency-domain fields, and 
+
+### Mechanics of a <span class=SC>meep</span> optimization
+
+design---in the case of the cloak, for example,
+the 
+We can 
+
+The adjoint solver is a tool for accelerating the task of
+identifying
 
 Before jumping into technical details, let's start by
 recalling the bird's-eye view of
@@ -110,9 +238,6 @@ More specifically, we'll consider problems with the following characteristics:
 
 +   The permittivity in the design region is expressed as an expansion
     in some (arbitrary, user-specified) set of basis functions:
-
-    $$ \epsilon(\mathbf x) \equiv \sum_{p=1}^P a_p \psi_p(\mathbf x),
-       \qquad \mathbf x\in \mathcal{V}^d$$
 
     Here $\{\psi_p(\mathbf x)\}, p=1,\cdots,P$ is a set of $P$ scalar-valued basis functions,
     defined for $\mathbf x \in \mathcal{V}^d$ the objective region, and the expansion coefficients $\{a_p\}$
