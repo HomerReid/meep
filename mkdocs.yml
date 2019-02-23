@@ -23,9 +23,6 @@ markdown_extensions:
 extra_javascript:
  - 'https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.1/MathJax.js?config=TeX-AMS_HTML'
 
-extra_css:
- - 'meep_documentation.css'
-
 pages:
 - 'Manual': 'index.md'
 - 'Introduction': 'Introduction.md'
@@ -63,8 +60,6 @@ pages:
     - 'Tutorial/Eigenmode Source': 'Python_Tutorials/Eigenmode_Source.md'
     - 'Tutorial/Mode Decomposition': 'Python_Tutorials/Mode_Decomposition.md'
     - 'Tutorial/GDSII Import': 'Python_Tutorials/GDSII_Import.md'
-    - 'Tutorial/Adjoint-based Optimization': 'Python_Tutorials/AdjointSolver.md' 
-    - 'Tutorial/Adjoint implementation notes': 'Python_Tutorials/AdjointImplementationNotes.md' 
 - 'Scheme Interface':
     - 'User Interface': 'Scheme_User_Interface.md'
     - 'Tutorial/Basics': 'Scheme_Tutorials/Basics.md'
@@ -75,9 +70,10 @@ pages:
     - 'Tutorial/Near-to-Far Field Spectra': 'Scheme_Tutorials/Near_to_Far_Field_Spectra.md'
     - 'Tutorial/Local Density of States': 'Scheme_Tutorials/Local_Density_of_States.md'
     - 'Tutorial/Optical Forces': 'Scheme_Tutorials/Optical_Forces.md'
+    - 'Tutorial/Multilevel Atomic Susceptibility': 'Scheme_Tutorials/Multilevel_Atomic_Susceptibility.md'
     - 'Tutorial/Frequency-Domain Solver': 'Scheme_Tutorials/Frequency_Domain_Solver.md'
     - 'Tutorial/Eigenmode Source': 'Scheme_Tutorials/Eigenmode_Source.md'
-    - 'Tutorial/Multilevel Atomic Susceptibility': 'Scheme_Tutorials/Multilevel_Atomic_Susceptibility.md'
+    - 'Tutorial/Mode Decomposition': 'Scheme_Tutorials/Mode_Decomposition.md'
     - 'Tutorial/Casimir Forces': 'Scheme_Tutorials/Casimir_Forces.md'
     - 'Guile and Scheme Information': 'Guile_and_Scheme_Information.md'
 - 'C++ Interface':
