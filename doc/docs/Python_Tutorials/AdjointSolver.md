@@ -15,18 +15,15 @@ $$
 # Automated design optimization via adjoint-based sensitivity analysis
 ---
 
-This tutorial introduces <span class=SC>meep</span>'s implementation
-of [*adjoint-based sensitivity analysis*](https://en.wikipedia.org/wiki/Adjoint_state_method)
+This tutorial introduces <span class=SC>meep</span>'s support
+for [*adjoint-based sensitivity analysis*](https://en.wikipedia.org/wiki/Adjoint_state_method)
 to facilitate automated design optimization via derivative-based
 numerical optimizers.
 
 ## Overview
 --------------------------------
 
-### Geometry optimization in computational electromagnetism
-
-Many applications of classical electromagnetism
-in modern science and engineering require
+Many applications in modern science and engineering require
 custom-engineered structures---for photonic devices,
 microwave antennas, diffraction gratings, or other
 functional components---in which the design of the
@@ -35,25 +32,28 @@ optimal performance according to some application-specific
 evaluation metric. In the problems we will
 consider, the tunable design variable
 will be the distribution of dielectric material
-in some subregion of a device or other
-geometry---characterized by the spatially varying
+in some subregion of a device geometry---characterized
+by the spatially varying
 scalar permittivity function
-$\epsilon^\sup{des}(\mathbf x)$ in that
-subregion---and our objective will
-typically be to maximize or minimize one or more
+$\epsilon\sup{des}(\mathbf x)$ in that
+subregion---and the objective will
+typically be to maximize or minimize
 power fluxes, mode-expansion coefficients, or
 other similar performance benchmarks defined
 in terms of the electromagnetic fields
 in some subregion of our geometry.
 
-!!! note More general materials
+??? note "**More general materials**"
+    <small>
     Although for simplicity we focus here on
     the case of isotropic, non-magnetic materials,
     the adjoint solver is also capable of optimizing
     geometries involving permeable ($\mu\ne 1$)
     and anisotropic
-    ($\boldsymbol{\epsilon},\boldsymbol{\mu}$ tensor-valued)
+    (tensor-valued $\boldsymbol{\epsilon},\boldsymbol{\mu}$)
     media.
+    </small>
+
 
 ### Simple examples of optimization problems
 
@@ -71,15 +71,15 @@ The examples above, distinct though they all are, illustrate
 some common features that will be present in every
 <span class=SC>meep</span> optimization problem:
 
-+   One or more [regions over which to tabulate frequency-domain fields (DFT cells)](Python_User_Interface.md#dft_obj) for use in computing power fluxes, mode-expansion coefficients, and other frequency-domain quantities used in characterizing device performance.  Because these regions are used to evaluate objective functions, we refer to them as *objective regions.* 
++   One or more [regions over which to tabulate frequency-domain fields (DFT cells)](../Python_User_Interface.md#dft_obj) for use in computing power fluxes, mode-expansion coefficients, and other frequency-domain quantities used in characterizing device performance.  Because these regions are used to evaluate objective functions, we refer to them as *objective regions.* 
 
-!!! note Objective regions may or may not have zero thickness 
+??? note "**Objective regions may or may not have zero thickness**"
     In the examples above, it happens that all objective regions are one-dimensional
     (zero-thickness) flux monitors, indicated by magenta lines; in a 3D geometry they
     would be two-dimensional flux planes, still of zero thickness in the normal 
     direction.  However, objective regions may also be of nonzero thickness, as for
     instance if the objective function involves the [field energy in a box-shaped
-    subregion of a geometry.](Python_User_Interface.md#energy)
+    subregion of a geometry.](../Python_User_Interface.md#energy)
 
 +    A specification of which quantities (power fluxes, mode coefficients, energies, etc.) 
      are to be computed for each objective region, and of how those quantities are to be
@@ -118,91 +118,57 @@ some common features that will be present in every
     
 
 ### Adjoint-based optimization
-
 Given an optimization geometry and a trial candidate for the
 design function [call it
 $\epsilon\sup{trial}(\mathbf{x})$], it's easy enough to see
-how we might use <span class=SC>meep</span> to evaluate
-our objective function---just create a
-<span class=SC>meep</span> simulation
-with $\epsilon\sup{trial}$ as a
-[spatially-varying permittivity function](Python_User_Interface.md#eps_func),
-timestep to accumulate frequency-domain fields, and 
+how we can use <span class=SC>meep</span> to evaluate
+our objective function---just define a
+<span class=SC>meep</span> geometry with $\epsilon\sup{trial}$ as a
+[spatially-varying permittivity function](../Python_User_Interface.md#eps_func),
+in the design region, define [DFT cells](../Python_User_Interface.md#FluxSpectra)
+to compute frequency-domain fields in the objective regions,
+[timestep](../Python_User_Interface.md#RunStepFunctions) until 
+the DFTs converge, then use post-processing routines like
+[`get_fluxes()`](../Python_User_Interface.md#get_fluxes)
+or
+[`get_eigenmode_coefficients()`](../Python_User_Interface.md#get_eigenmode_coefficients)
+to get the quantities needed to evaluate the objective function.
+Thus, for the cost of one full <span class=SC>meep</span> timestepping
+run we obtain the value of our objective function at one point
+in the $N$-dimensional parameter space of possible inputs.
 
-### Mechanics of a <span class=SC>meep</span> optimization
-
-design---in the case of the cloak, for example,
-the 
-We can 
-
-The adjoint solver is a tool for accelerating the task of
-identifying
-
-Before jumping into technical details, let's start by
-recalling the bird's-eye view of
-
-### Photonic design optimization: Common problem structure and simple examples
-
-The problems we'll consider all have the following common
-general structure: We are given a <span class=SC>meep</span> simulation
-geometry---consisting of a material
-$\epsilon(\mathbf x)$, an incident field or other excitation source,
-and one or more `dft_flux` regions---
-
-### Specifying objective regions and defining objective functions
- 
-###
+But *now* what do we do?! The difficulty is that the computation
+just described furnishes only the *value* of the objective function
+for a given input, not its *derivatives* with respect to the
+design variables---and thus yields zero insight into how we should
+tweak the design to improve performance. 
+For small problems with just a few parameters we might try our luck with a
+[derivative-free optimization algorithm](https://en.wikipedia.org/wiki/Derivative-free_optimization),
+but 
+Alternatively, we could get derivative information by brute-force 
+finite-differencing---slightly
+tweaking one design variable, repeating the full timestepping run,
+and asking how the results changed---but proceeding this way
+to compute derivatives with respect to all $N$ design variables
+would require fully $N$ separate timestepping
+runs, a thoroughly hopeless prospect for a complicated structure 
+with thousands or millions of degrees of freedom.
+Is there no way to estimate the full $N$-dimensional 
+gradient in a reasonable amount of time? 
 
 
-### Examples
 
-in which
-some regions are fixed and immutable
+which may have thousands of 
+components this 
+respect to all $N$ variables
+derivatives with respect
+to all $N$ variables would require doing $N$
+full timestepping runs
+of the objective function with respect to 
 
----for example, the
-input and output waveguide sections in the taper problem
-below---but
 
-We excite this geometry using a given fixed source of incident
-radiation and
-which will typically be a function
-
-###
-
-The metric for ``improvement'
-
-We have a
-
-In a nutshell,
-Suppose
-
-###
-
-The rest of this page
-
-you
-communicating to
-
-+ Set up your
-
-+ Invoke
-`get_objective_and_gradient`
-1.
-
-## User's manual:
---------------------------------
-
-## Setting up your
---------------------------------
-
-Setting up <span class=SC>meep</span> geometry for automated design
-optimization
+### Mechanics of <span class=SC>meep</span> design optimization: A choice of two tracks
 is 
-
-+ Your simulation
-
-+ When instantiating the material configuration of your geometry,
-you will 
 
 ### Objective regions and design regions
 --------------------------------
@@ -262,7 +228,6 @@ circular inclusion, in which we want to optimize the
 permittivity distribution in the circle to maximize
 power flux through the waveguide:
 
-![](images/AdjointExample1.png)
 
 In this case we have only a single objective region,
 and the objective function is simply

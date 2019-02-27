@@ -1058,6 +1058,8 @@ Change the list of sources in `Simulation.sources` to `new_sources`, and changes
 —
 This can be called in a step function, and is useful for changing the geometry or default material as a function of time.
 
+<a name="FluxSpectra"></a>
+
 ### Flux Spectra
 
 Given a bunch of [`FluxRegion`](#fluxregion) objects, you can tell Meep to accumulate the Fourier transforms of the fields in those regions in order to compute flux spectra. See also the [Introduction](Introduction.md#transmittancereflectance-spectra) and [Tutorial/Basics](Python_Tutorials/Basics.md#transmittance-spectrum-of-a-waveguide-bend). These are attributes of the `Simulation` class. The most important function is:
@@ -1084,6 +1086,7 @@ You might have to do something lower-level if you have multiple flux regions cor
 —
 Given a flux object, returns a list of the frequencies that it is computing the spectrum for.
 
+<a name="get_fluxes"></a>
 **`get_fluxes(flux)`**
 —
 Given a flux object, returns a list of the current flux spectrum that it has accumulated.
@@ -1133,6 +1136,7 @@ Scale the Fourier-transformed fields in `flux` by the complex number `s`. e.g. `
 
 Given a structure, Meep can decompose the Fourier-transformed fields into a superposition of its harmonic modes. For a theoretical background, see [Mode Decomposition](Mode_Decomposition.md).
 
+<a name="get_eigenmode_coefficients"></a>
 **`get_eigenmode_coefficients(flux, bands, eig_parity=mp.NO_PARITY, eig_vol=None, eig_resolution=0, eig_tolerance=1e-12, kpoint_func=None, verbose=False)`**
 —
 Given a flux object and list of band indices, return a `namedtuple` with the following fields:
@@ -1433,6 +1437,8 @@ fr = mp.FluxRegion(volume=mp.GDSII_vol(fname, layer, zmin, zmax))
 —
 Displays an interactive image of how the cell is divided into chunks. Each rectangular region is a chunk, and each color represents a different processor. Requires [matplotlib](https://matplotlib.org).
 
+<a name="RunStepFunctions"></a>
+
 Run and Step Functions
 ----------------------
 
@@ -1652,7 +1658,7 @@ One complication of array slicing is that the array returned by `get_array` may 
 
 The `collapse` flag to `get_array_metadata` may be set to `True` to specify that the metadata are to be computed for an array with empty dimensions collapsed &mdash; in other words, for an array of frequency-domain field components. The default is `collapse=False`, in which case `get_array_metadata` returns metadata appropriate for an array of time-domain field components
 
-The routine `get_dft_array_metadata` is equivalent to `get_array_metadata` with `collapse=True`. `get_dft_array_metadata` also accepts the convenience parameter `dft_cell` as an alternative to `vol` or `center/size`; set `dft_cell` to a `dft_flux` or `dft_fields` object to define the region covered by the array.
+The routine `get_dft_array_metadata` is equivalent to `get_array_metadata` with `collapse=True`. `get_dft_array_metadata` also accepts the convenience parameter `dft_cell` as an alternative to `vol` or `center/size`; set `
 
 #### Source Slices
 

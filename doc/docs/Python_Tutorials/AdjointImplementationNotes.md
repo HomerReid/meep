@@ -15,7 +15,7 @@ $$
  
 These notes are intended as something of a companion to the
 [user's manual and tutorial documentation for adjoint-based
-optimization in <span class="SC">meep</span>](Python_Tutorials/Adjoint_Based_Optimization.md); 
+optimization in <span class="SC">meep</span>](AdjointSolver.md); 
 whereas the goal of those pages is to document the user interface
 and explain how to *use* the solver for practical problems,
 our focus here will be what's going on beneath the hood---how
