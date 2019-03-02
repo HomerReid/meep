@@ -76,10 +76,10 @@ __all__ = [ 'OptimizationProblem', 'EHTransverse' ]
 
 from .OptimizationProblem import OptimizationProblem
 
-from .ObjectiveFunction import (EHTransverse, Exyz, Hxyz, EHxyz, xhat, yhat,
-                                zhat, origin, FDGrid, ObjectiveFunction,
-                                DFTCell, adjoint_options, abs2, rel_diff)
+from .ObjectiveFunction import (EHTransverse, Exyz, Hxyz, EHxyz, xHat, yHat,
+                                zHat, Origin, GridInfo, ObjectiveFunction,
+                                DFTCell, AdjointOptions, Abs2, RelDiff)
 
-from .Basis import parameterized_dielectric, plane_wave_basis, fourier_legendre_basis
+from .Basis import ParameterizedDielectric, PlaneWaveBasis, FourierLegendreBasis
 
-from .Visualize import visualize_sim, plot_options
+from .Visualize import VisualizeSim, PlotOptions

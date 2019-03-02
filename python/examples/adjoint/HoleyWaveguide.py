@@ -4,7 +4,7 @@ import numpy as np
 import meep as mp
 #import meep.adjoint as adj
 
-from meep.adjoint import (Exyz, Hxyz, EHxyz, xhat, yhat, zhat, origin,
+from meep.adjoint import (Exyz, Hxyz, EHxyz, xHat, yHat, zHat, Origin,
                           OptimizationProblem, parameterized_dielectric,
                           plane_wave_basis, fourier_legendre_basis)
 
@@ -52,16 +52,16 @@ class HoleyWaveguide(OptimizationProblem):
         #----------------------------------------
         #- design region
         #----------------------------------------
-        design_center = origin
+        design_center = Origin
         design_size   = mp.Vector3(2.0*args.r_disc, 2.0*args.r_disc)
         design_region = mp.Volume(center=design_center, size=design_size)
 
         #----------------------------------------
         #- objective regions
         #----------------------------------------
-        fluxW_center  =  (+args.r_disc + dpml)*xhat
-        fluxE_center  =  (-args.r_disc - dpml)*xhat
-        flux_size     =  2.0*args.w_wvg*yhat
+        fluxW_center  =  (+args.r_disc + dpml)*xHat
+        fluxE_center  =  (-args.r_disc - dpml)*xHat
+        flux_size     =  2.0*args.w_wvg*yHat
 
         fluxW_region  = mp.FluxRegion(center=fluxW_center, size=flux_size, direction=mp.X)
         fluxE_region  = mp.FluxRegion(center=fluxE_center, size=flux_size, direction=mp.X)
@@ -71,7 +71,7 @@ class HoleyWaveguide(OptimizationProblem):
         #----------------------------------------
         #- optional extra regions for visualization
         #----------------------------------------
-        extra_regions      = [mp.Volume(center=origin, size=cell_size)] if args.full_dfts else []
+        extra_regions      = [mp.Volume(center=Origin, size=cell_size)] if args.full_dfts else []
 
         #----------------------------------------
         # basis set
@@ -82,7 +82,7 @@ class HoleyWaveguide(OptimizationProblem):
         #----------------------------------------
         #- source location
         #----------------------------------------
-        source_center    = fluxE_center - dpml*xhat
+        source_center    = fluxE_center - dpml*xHat
         source_size      = flux_size
 
         #----------------------------------------
@@ -111,7 +111,7 @@ class HoleyWaveguide(OptimizationProblem):
         args=self.args
         sx=self.cell_size.x
 
-        wvg=mp.Block(center=origin, material=mp.Medium(epsilon=args.eps_wvg),
+        wvg=mp.Block(center=Origin, material=mp.Medium(epsilon=args.eps_wvg),
                      size=mp.Vector3(self.cell_size.x,args.w_wvg))
 
         disc=mp.Cylinder(center=self.design_center, radius=args.r_disc,

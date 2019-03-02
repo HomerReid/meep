@@ -27,13 +27,14 @@ Exyz=[mp.Ex, mp.Ey, mp.Ez]
 Hxyz=[mp.Hx, mp.Hy, mp.Hz]
 EHxyz=Exyz+Hxyz
 
-xhat=mp.Vector3(1.0,0.0,0.0)
-yhat=mp.Vector3(0.0,1.0,0.0)
-zhat=mp.Vector3(0.0,0.0,1.0)
-origin=mp.Vector3()
+xHat=mp.Vector3(1.0,0.0,0.0)
+yHat=mp.Vector3(0.0,1.0,0.0)
+zHat=mp.Vector3(0.0,0.0,1.0)
+Origin=mp.Vector3()
 
-# FDGrid stores info on the full Yee grid in a MEEP simulation
-FDGrid = namedtuple('FDGrid', ['size', 'res'])
+# GridInfo stores the extents and resolution of the full Yee grid in a MEEP
+# simulation; it is the minimal information needed to compute array metadata.
+GridInfo = namedtuple('GridInfo', ['size', 'res'])
 
 VERBOSE=2
 STANDARD=1
@@ -43,7 +44,7 @@ CONCISE=0
 # various options affecting the adjoint solver, user-tweakable via
 # command-line arguments or set_adjoint_option()
 ######################################################################
-adjoint_options={
+AdjointOptions={
  'dft_reltol':    1.0e-6,
  'dft_timeout':   10.0,
  'dft_interval':  20.0,
@@ -95,25 +96,31 @@ def abs2(z):
 # multidimensional arrays of frequency-domain field amplitudes.
 #
 #   -- EH refers to a (1D, 2D, or 3D) array of frequency-domain field amplitudes
-#      for a single field component at a single frequency.
+#      for a single field component at a single frequency. The dimensions of
+#      this array are stored in the `slice_dims` field of DFTCell.
 #
-#   -- An 'EHList' is a one-dimensional list of EH arrays, one for each component in the
-#      cell. Thus e.g. EHList[2] = array slice of amplitudes for component cEH[2], all at
-#      a single frequency.
+#   -- EHData refers to a collection (one-dimensional list) of EH arrays, one
+#      for each component in the cell. Thus e.g. EHData[2] = array slice of
+#      amplitudes for component cEH[2], all at a single frequency.
 #
-#   -- An 'EHSet' is a one-dimensional list of EHLists, one for each frequency in a the DFTCell.
+#   -- EHCatalog refers to a collection (one-dimensional list) of EHData
+#      entities, one for each frequency in the DFTCell---that is, a 2D matrix,
+#      with rows corresponding to frequencies and columns corresponding to
+#      components of EH arrays. Thus e.g. EHCatalog[3][2] = array slice of
+#      amplitudes for component cEH[2] at frequency #3.
 #
-#   -- Arrays of eigenmode field amplitudes are named similarly with the substitution "EH" -> "eh"
+#   -- Arrays of eigenmode field amplitudes are named similarly with the
+#      substitution "EH" -> "eh"
 #
-# Note: for now, all arrays are stored in memory. For large calculations
-# with many DFT frequencies this may become impractical. TODO: implement disk caching.
+# Note: for now, all arrays are stored in memory. For large calculations with
+# many DFT frequencies this may become impractical. TODO: disk caching.
 ######################################################################
 class DFTCell(object):
 
     ######################################################################
     ######################################################################
     ######################################################################
-    def __init__(self, FDGrid=None, region=None, center=origin, size=None,
+    def __init__(self, GridInfo=None, region=None, center=origin, size=None,
                        cEH=None, fcen=None, df=0, nfreq=1):
 
         if region is not None:
@@ -121,30 +128,30 @@ class DFTCell(object):
         elif size is not None:
             self.center, self.size, self.region = center, size, mp.Volume(center=center, size=size)
         else:
-            self.center, self.size, self.region = origin, FDGrid.size, mp.Volume(center=center, size=size)
+            self.center, self.size, self.region = origin, GridInfo.size, mp.Volume(center=center, size=size)
 
-        self.nhat     = region.direction if hasattr(region,'direction') else None
-        self.type     = 'flux' if self.nhat is not None else 'fields' # TODO extend to other cases
-        self.cEH      =      cEH if cEH is not None                                  \
-                        else EHTransverse[self.nhat - mp.X] if self.nhat is not None \
-                        else EHxyz
-        self.fcen     = fcen
-        self.df       = df if nfreq>1 else 0.0
-        self.nfreq    = nfreq
-        self.freqs    = [fcen] if nfreq==0 else np.linspace(fcen-0.5*df, fcen+0.5*df, nfreq)
+        self.nhat      = region.direction if hasattr(region,'direction') else None
+        self.type      = 'flux' if self.nhat is not None else 'fields' # TODO extend to other cases
+        self.cEH       =      cEH if cEH is not None                                  \
+                         else EHTransverse[self.nhat - mp.X] if self.nhat is not None \
+                         else EHxyz
+        self.fcen      = fcen
+        self.df        = df if nfreq>1 else 0.0
+        self.nfreq     = nfreq
+        self.freqs     = [fcen] if nfreq==0 else np.linspace(fcen-0.5*df, fcen+0.5*df, nfreq)
 
-        self.sim      = None  # mp.simulation for current simulation
-        self.dft_obj  = None  # meep DFT object for current simulation
-        self.labels   = []    # labels[nsim] = name of #nsimth run for which we have data
-        self.EHSets   = []    # EHSets[nsim][nf][nc] = array slice for component #nc at freq #nf for run #nsim
+        self.sim       = None  # mp.simulation for current simulation
+        self.dft_obj   = None  # meep DFT object for current simulation
+        self.label     = None  # label for current simulation
 
-        self.last_update_time = 0.0
+        self.EHCache   = {}    # EHCache[label][nf][nc] = array slice for freq #nf, component #nc in simulation with given label
+        self.last_update_time = 0.0    # meep time at which EHCache was last updated
 
-        self.eigencache = {}  # dict of eigenmode field EHLists, indexed by (mode,freq) pairs
+        self.eigencache = {}  # dict of eigenmode field EHData entities, indexed by (mode,freq) pairs
 
 
         # FIXME At present the 'xyzw' metadata cannot be computed until a mp.simulation / meep::fields
-        #       object has been created, but in fact the metadata only depend on the FDGrid
+        #       object has been created, but in fact the metadata only depend on the GridInfo
         #       (resolution and extents of the computational lattice) and are independent
         #       of the specific material geometry and source configuration of any particular
         #       'fields' instance or simulation. In keeping with the spirit of 'DFTCell' it should
@@ -154,26 +161,21 @@ class DFTCell(object):
         self.xyzw, self.slice_dims  = None, None
 
     ######################################################################
-    # initialize and return an empty 'EHSet'
+    # Look up and return the frequency-domain field slices for all components
+    # for a given frequency from a given simulation
     ######################################################################
-    def NewEHSet(self):
-        return [ [ 0.0j*np.zeros(self.slice_dims) for c in self.cEH ] for f in self.freqs ]
-
-    ######################################################################
-    # Look up and return the EHList for a given frequency in a given run
-    ######################################################################
-    def RetrieveEHList(self,label,nf=0):
-        if label not in self.labels or nf>len(self.EHSets[self.labels.index(label)]):
+    def FetchEHSlices(self,label,nf=0):
+        if label not in EHCache.keys() or nf>=len(self.freqs):
             ValueError('requested non-existent data for run={}, nf={}'.format(label,nf))
-        return self.EHSets[self.labels.index(label)][nf]
+        return self.EHCache[label][nf]
 
     ######################################################################
     ######################################################################
     ######################################################################
-    def SubtractIncidentFields(self,EHTList,nf=0):
-        EHIList = self.RetrieveEHList('incident',nf)
+    def SubtractIncidentFields(self,EHTData,nf=0):
+        EHIData = self.RetrieveEHData('incident',nf)
         for nc in range(len(cEH)):
-            EHTList[nc] -= EHIList[nc]
+            EHTData[nc] -= EHIData[nc]
 
     ######################################################################
     # 'register' the cell with a MEEP timestepping simulation to request
@@ -188,9 +190,10 @@ class DFTCell(object):
         self.sim     = sim
         self.dft_obj =      sim.add_flux(self.fcen,self.df,self.nfreq,self.region) if self.type=='flux'   \
                        else sim.add_dft_fields(self.cEH, self.fcen, self.df, self.nfreq, where=self.region)
-        self.labels.append(label)
-        self.EHSets.append( self.NewEHSet() )
-        self.last_update_time = 0.0
+        self.label   = label
+
+        self.last_update_time = -100000
+        self.UpdateEHCache()
 
     ######################################################################
     # This is like mp.get_dft_array(), but 'zero-padded:' when the DFT cell
@@ -207,10 +210,10 @@ class DFTCell(object):
     ######################################################################
     ######################################################################
     ######################################################################
-    def UpdateEHSets(self):
+    def UpdateEHCache(self):
         if self.last_update_time < self.sim.round_time():
-            self.last_update_time=self.sim.round_time()
-            self.EHSets = [ [ self.GetEH(c, nf) for c in self.cEH ] for nf in range(self.nfreq) ]
+            self.EHCache[self.label] = [ [ self.GetEH(c, nf) for c in self.cEH ] for nf in range(self.nfreq) ]
+            self.last_update_time = self.sim.round_time()
 
     ######################################################################
     # Return an ehList describing the fields of eigenmode #mode at freq #nf.
@@ -267,7 +270,7 @@ class DFTCell(object):
 
 
 #def flux_line(x0, y0, length, dir):
-#    size=length*(xhat if dir is mp.Y else yhat)
+#    size=length*(xHat if dir is mp.Y else yhat/
 #    return mp.FluxRegion(center=mp.Vector3(x0,y0), size=size, direction=dir)
 
 

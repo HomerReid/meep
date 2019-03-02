@@ -5,9 +5,9 @@ import meep as mp
 
 import matplotlib.pyplot as plt
 
-from .ObjectiveFunction import (Exyz, Hxyz, EHxyz, xhat, yhat, zhat, origin, FDGrid,
-                                ObjectiveFunction, DFTCell, adjoint_options,
-                                get_objective, get_objective_and_gradient,
+from .ObjectiveFunction import (Exyz, Hxyz, EHxyz, xHat, yHat, zHat, Origin, GridInfo,
+                                ObjectiveFunction, DFTCell, AdjointOptions,
+                                GetObjective, GetObjectiveAndGradient,
                                 VERBOSE, STANDARD, CONCISE)
 
 from .Visualize import visualize_sim, plot_options
@@ -73,11 +73,11 @@ class OptimizationProblem(ABC):
 
         self.outfile = args.outfile if args.outfile else "OptimizationProblem.out"
 
-        adjoint_options['dft_reltol']   = args.dft_reltol
-        adjoint_options['dft_timeout']  = args.dft_timeout
-        adjoint_options['dft_interval'] = args.dft_interval
-        adjoint_options['verbosity']    = VERBOSE if args.verbose else CONCISE if args.concise else STANDARD
-        adjoint_options['visualize']    = args.visualize
+        AdjointOptions['dft_reltol']   = args.dft_reltol
+        AdjointOptions['dft_timeout']  = args.dft_timeout
+        AdjointOptions['dft_interval'] = args.dft_interval
+        AdjointOptions['verbosity']    = VERBOSE if args.verbose else CONCISE if args.concise else STANDARD
+        AdjointOptions['visualize']    = args.visualize
 
     ######################################################################
     # constructor helper method that initializes the command-line parser
@@ -127,9 +127,9 @@ class OptimizationProblem(ABC):
         #--------------------------------------------------
         # flags configuring adjoint-solver options
         #--------------------------------------------------l
-        parser.add_argument('--dft_reltol',   type=float, default=adjoint_options['dft_reltol'],   help='convergence threshold for end of timestepping')
-        parser.add_argument('--dft_timeout',  type=float, default=adjoint_options['dft_timeout'],  help='max runtime as a multiple of last_source_time')
-        parser.add_argument('--dft_interval', type=float, default=adjoint_options['dft_interval'], help='meep time between DFT convergence checks')
+        parser.add_argument('--dft_reltol',   type=float, default=AdjointOptions['dft_reltol'],   help='convergence threshold for end of timestepping')
+        parser.add_argument('--dft_timeout',  type=float, default=AdjointOptions['dft_timeout'],  help='max runtime as a multiple of last_source_time')
+        parser.add_argument('--dft_interval', type=float, default=AdjointOptions['dft_interval'], help='meep time between DFT convergence checks')
         parser.add_argument('--visualize',    dest='visualize', action='store_true', help='produce visualization graphics')
         parser.add_argument('--verbose',      dest='verbose',   action='store_true', help='produce more output')
         parser.add_argument('--concise',      dest='concise',   action='store_true', help='produce less output')
@@ -188,7 +188,7 @@ class OptimizationProblem(ABC):
         args=self.args
 
         sim=self.create_sim(self.beta_vector)
-        if adjoint_options['visualize']:
+        if AdjointOptions['visualize']:
             fig=plt.figure(1)
             plt.clf()
             visualize_sim(sim)
@@ -259,7 +259,7 @@ class OptimizationProblem(ABC):
     ######################################################################
     ######################################################################
     ######################################################################
-    def run(self):
+    def Run(self):
 
         #--------------------------------------------------------------
         # run iterative design optimization
