@@ -156,7 +156,7 @@ class EigenModeSource(Source):
         self._eig_tolerance = check_positive('EigenModeSource.eig_tolerance', val)
 
     def eig_power(self,freq):
-         amp=self.amplitude
-         if callable(getattr(self.src, "fourier_transform", None)):
-            amp*=self.src.fourier_transform(2.0*mp.pi*freq)
-         return abs(amp)**2
+        amp = self.amplitude
+        if callable(getattr(self.src, "fourier_transform", None)):
+           amp *= self.src.fourier_transform(freq)
+        return abs(amp)**2
