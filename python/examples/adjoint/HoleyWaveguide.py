@@ -2,11 +2,10 @@ import sys
 import argparse
 import numpy as np
 import meep as mp
-#import meep.adjoint as adj
 
-from meep.adjoint import (Exyz, Hxyz, EHxyz, xHat, yHat, zHat, Origin,
-                          OptimizationProblem, parameterized_dielectric,
-                          plane_wave_basis, fourier_legendre_basis)
+from meep.adjoint import (OptimizationProblem, DFTCell, adjoint_options,
+                          xHat, yHat, zHat, origin,
+                          parameterized_dielectric, fourier_legendre_basis)
 
 ##################################################
 ##################################################
@@ -52,7 +51,7 @@ class HoleyWaveguide(OptimizationProblem):
         #----------------------------------------
         #- design region
         #----------------------------------------
-        design_center = Origin
+        design_center = origin
         design_size   = mp.Vector3(2.0*args.r_disc, 2.0*args.r_disc)
         design_region = mp.Volume(center=design_center, size=design_size)
 
@@ -71,7 +70,7 @@ class HoleyWaveguide(OptimizationProblem):
         #----------------------------------------
         #- optional extra regions for visualization
         #----------------------------------------
-        extra_regions      = [mp.Volume(center=Origin, size=cell_size)] if args.full_dfts else []
+        extra_regions      = [mp.Volume(center=origin, size=cell_size)] if args.full_dfts else []
 
         #----------------------------------------
         # basis set
@@ -88,7 +87,7 @@ class HoleyWaveguide(OptimizationProblem):
         #----------------------------------------
         #- objective function
         #----------------------------------------
-        f_expr='+P1_0+P2_0+P1_1+P2_1+M1_0+M2_0+M1_1+M2_1'
+        f_expr='+P1_0+P2_0+P1_1+P2_1+M1_0+M2_0+M1_1+M2_1+S_0+S_1'
 
         #----------------------------------------
         #- internal storage for variables needed later
@@ -111,7 +110,7 @@ class HoleyWaveguide(OptimizationProblem):
         args=self.args
         sx=self.cell_size.x
 
-        wvg=mp.Block(center=Origin, material=mp.Medium(epsilon=args.eps_wvg),
+        wvg=mp.Block(center=origin, material=mp.Medium(epsilon=args.eps_wvg),
                      size=mp.Vector3(self.cell_size.x,args.w_wvg))
 
         disc=mp.Cylinder(center=self.design_center, radius=args.r_disc,
@@ -147,8 +146,8 @@ class HoleyWaveguide(OptimizationProblem):
 ######################################################################
 # if executed as a script, we look at our own filename to figure out
 # the name of the class above, create an instance of this class called
-# OptProb, and call its run() method.
+# opt_prob, and call its run() method.
 ######################################################################
 if __name__ == '__main__':
-    OptProb=globals()[__file__.split('/')[-1].split('.')[0]]()
-    OptProb.run()
+    opt_prob=globals()[__file__.split('/')[-1].split('.')[0]]()
+    opt_prob.run()

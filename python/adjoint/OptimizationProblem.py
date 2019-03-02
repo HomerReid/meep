@@ -5,12 +5,17 @@ import meep as mp
 
 import matplotlib.pyplot as plt
 
-from .ObjectiveFunction import (Exyz, Hxyz, EHxyz, xHat, yHat, zHat, Origin, GridInfo,
-                                ObjectiveFunction, DFTCell, AdjointOptions,
-                                GetObjective, GetObjectiveAndGradient,
-                                VERBOSE, STANDARD, CONCISE)
+from . import ObjectiveFunction
+from . import Visualization
+from . import Basis
 
-from .Visualize import visualize_sim, plot_options
+from .ObjectiveFunction import (ObjectiveFunction, DFTCell, adjoint_options,
+                                EHTransverse, Exyz, Hxyz, EHxyz, xHat, yHat,
+                                zHat, origin, GridInfo, abs2, rel_diff,
+                                get_objective, get_objective_and_gradient)
+
+
+from .Visualization import visualize_sim, plot_options
 
 ######################################################################
 # invoke python's 'abstract base class' formalism in a version-agnostic way
@@ -64,20 +69,22 @@ class OptimizationProblem(ABC):
         #self.grid  = FDGrid(size=self.cell_size, res=self.args.res)
         self.objective_cells    = [ DFTCell(region=v,fcen=fcen,df=df,nfreq=nfreq) for v in objective_regions ]
         self.extra_cells        = [ DFTCell(region=v,fcen=fcen,df=df,nfreq=nfreq) for v in extra_regions ] if args.full_dfts else []
-        self.design_cell        = DFTCell(region=design_region,cEH=Exyz,fcen=fcen,df=df,nfreq=nfreq)
-        self.DFTCells           = self.objective_cells + self.extra_cells + [self.design_cell]
+        self.design_cell        = DFTCell(region=design_region,fcen=fcen,df=df,nfreq=nfreq)
+        self.dft_cells          = self.objective_cells + self.extra_cells + [self.design_cell]
 
-        self.ObjFunc = ObjectiveFunction(self.objective_cells, f_str=f_str)
+        self.obj_func = ObjectiveFunction(self.objective_cells, f_str=f_str)
 
         self.beta_vector = self.init_beta_vector()
 
         self.outfile = args.outfile if args.outfile else "OptimizationProblem.out"
 
-        AdjointOptions['dft_reltol']   = args.dft_reltol
-        AdjointOptions['dft_timeout']  = args.dft_timeout
-        AdjointOptions['dft_interval'] = args.dft_interval
-        AdjointOptions['verbosity']    = VERBOSE if args.verbose else CONCISE if args.concise else STANDARD
-        AdjointOptions['visualize']    = args.visualize
+        adjoint_options['dft_reltol']   = args.dft_reltol
+        adjoint_options['dft_timeout']  = args.dft_timeout
+        adjoint_options['dft_interval'] = args.dft_interval
+        adjoint_options['visualize']    = args.visualize
+        adjoint_options['verbosity']    =      'verbose' if args.verbose    \
+                                          else 'concise' if args.concise    \
+                                          else adjoint_options['verbosity']
 
     ######################################################################
     # constructor helper method that initializes the command-line parser
@@ -127,9 +134,9 @@ class OptimizationProblem(ABC):
         #--------------------------------------------------
         # flags configuring adjoint-solver options
         #--------------------------------------------------l
-        parser.add_argument('--dft_reltol',   type=float, default=AdjointOptions['dft_reltol'],   help='convergence threshold for end of timestepping')
-        parser.add_argument('--dft_timeout',  type=float, default=AdjointOptions['dft_timeout'],  help='max runtime as a multiple of last_source_time')
-        parser.add_argument('--dft_interval', type=float, default=AdjointOptions['dft_interval'], help='meep time between DFT convergence checks')
+        parser.add_argument('--dft_reltol',   type=float, default=adjoint_options['dft_reltol'],   help='convergence threshold for end of timestepping')
+        parser.add_argument('--dft_timeout',  type=float, default=adjoint_options['dft_timeout'],  help='max runtime as a multiple of last_source_time')
+        parser.add_argument('--dft_interval', type=float, default=adjoint_options['dft_interval'], help='meep time between DFT convergence checks')
         parser.add_argument('--visualize',    dest='visualize', action='store_true', help='produce visualization graphics')
         parser.add_argument('--verbose',      dest='verbose',   action='store_true', help='produce more output')
         parser.add_argument('--concise',      dest='concise',   action='store_true', help='produce less output')
@@ -188,20 +195,20 @@ class OptimizationProblem(ABC):
         args=self.args
 
         sim=self.create_sim(self.beta_vector)
-        if AdjointOptions['visualize']:
+        if adjoint_options['visualize']:
             fig=plt.figure(1)
             plt.clf()
             visualize_sim(sim)
 
         if args.eval_gradient:
-           F,gradF=get_objective_and_gradient(sim,self.ObjFunc,
-                                              self.DFTCells,self.basis)
+           F,gradF=get_objective_and_gradient(sim,self.obj_func,
+                                              self.dft_cells,self.basis)
         else:
-           F = get_objective(sim,self.ObjFunc,self.DFTCells)
+           F = get_objective(sim,self.obj_func,self.dft_cells)
            gradF = 0.0*self.beta_vector
 
-        FQ = [F] + self.ObjFunc.qvalues
-        FQ_names = ['F'] + self.ObjFunc.qnames
+        FQ = [F] + self.obj_func.qvalues
+        FQ_names = ['F'] + self.obj_func.qnames
 
         ##################################################
         # finite-difference derivatives
@@ -212,14 +219,14 @@ class OptimizationProblem(ABC):
                 delta_beta=args.fd_delta
             beta_hat=0.0*self.beta_vector; beta_hat[args.fd_index]=1;
             sim  = self.create_sim(self.beta_vector + delta_beta*beta_hat)
-            FP   = get_objective(sim,self.ObjFunc,self.DFTCells)
-            FQP  = [FP] + self.ObjFunc.qvalues
+            FP   = get_objective(sim,self.obj_func,self.dft_cells)
+            FQP  = [FP] + self.obj_func.qvalues
             d1FQ = (FQP-FQ)/delta_beta
 
             if args.fd_order > 1:
                 sim  = self.create_sim(self.beta_vector - delta_beta*beta_hat)
-                FM   = get_objective(sim,self.ObjFunc,self.DFTCells)
-                FQM  = [FM] + self.ObjFunc.qvalues
+                FM   = get_objective(sim,self.obj_func,self.dft_cells)
+                FQM  = [FM] + self.obj_func.qvalues
                 d2FQ = (FQP-FQM)/(2.0*delta_beta)
 
         #--------------------------------------------------
@@ -257,9 +264,10 @@ class OptimizationProblem(ABC):
         f.close()
 
     ######################################################################
+    # 'run' class method of OptimizationProblem branches off among a
+    # variety of possible computations based on command-line options
     ######################################################################
-    ######################################################################
-    def Run(self):
+    def run(self):
 
         #--------------------------------------------------------------
         # run iterative design optimization

@@ -72,14 +72,16 @@ class MyOptProblem(adj.OptimizationProblem):
 
 """
 
-__all__ = [ 'OptimizationProblem', 'EHTransverse' ]
+__all__ = [ 'OptimizationProblem', 'DFTCell', 'adjoint_options',
+            'EHTransverse', 'Exyz', 'Hxyz', 'EHxyz',
+            'xHat', 'yHat', 'zHat']
 
 from .OptimizationProblem import OptimizationProblem
 
-from .ObjectiveFunction import (EHTransverse, Exyz, Hxyz, EHxyz, xHat, yHat,
-                                zHat, Origin, GridInfo, ObjectiveFunction,
-                                DFTCell, AdjointOptions, Abs2, RelDiff)
+from .ObjectiveFunction import (ObjectiveFunction, DFTCell, adjoint_options,
+                                EHTransverse, Exyz, Hxyz, EHxyz, xHat, yHat,
+                                zHat, origin, GridInfo, abs2, rel_diff)
 
-from .Basis import ParameterizedDielectric, PlaneWaveBasis, FourierLegendreBasis
+from .Basis import parameterized_dielectric, plane_wave_basis, fourier_legendre_basis
 
-from .Visualize import VisualizeSim, PlotOptions
+from .Visualization import visualize_sim, plot_options
