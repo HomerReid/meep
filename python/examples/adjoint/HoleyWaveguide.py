@@ -1,10 +1,10 @@
-import sys
+mport sys
 import argparse
 import numpy as np
 import meep as mp
 
 from meep.adjoint import (OptimizationProblem, DFTCell, adjoint_options,
-                          xHat, yHat, zHat, origin,
+                          xHat, yHat, zHat, origin, FluxLine,
                           parameterized_dielectric, fourier_legendre_basis)
 
 ##################################################
@@ -62,10 +62,16 @@ class HoleyWaveguide(OptimizationProblem):
         fluxE_center  =  (-args.r_disc - dpml)*xHat
         flux_size     =  2.0*args.w_wvg*yHat
 
-        fluxW_region  = mp.FluxRegion(center=fluxW_center, size=flux_size, direction=mp.X)
-        fluxE_region  = mp.FluxRegion(center=fluxE_center, size=flux_size, direction=mp.X)
+        #fluxW_region  = mp.FluxRegion(center=fluxW_center, size=flux_size, direction=mp.X)
+        #fluxE_region  = mp.FluxRegion(center=fluxE_center, size=flux_size, direction=mp.X)
+        x0_east       =  args.r_disc + dpml
+        x0_west       = -args.r_disc - dpml
+        y0            = 0.0
+        flux_length   = 2.0*args.w_wvg
+        east          = FluxLine(x0_east,y0,flux_length,mp.X,'east')
+        west          = FluxLine(x0_west,y0,flux_length,mp.X,'west')
 
-        objective_regions  = [fluxW_region, fluxE_region]
+        objective_regions  = [east, west]
 
         #----------------------------------------
         #- optional extra regions for visualization
@@ -81,13 +87,13 @@ class HoleyWaveguide(OptimizationProblem):
         #----------------------------------------
         #- source location
         #----------------------------------------
-        source_center    = fluxE_center - dpml*xHat
-        source_size      = flux_size
+        source_center    = origin - (x0_west - dpml)*xHat
+        source_size      = flux_length*yHat
 
         #----------------------------------------
         #- objective function
         #----------------------------------------
-        f_expr='+P1_0+P2_0+P1_1+P2_1+M1_0+M2_0+M1_1+M2_1+S_0+S_1'
+        fstr='P1_east+0.0*(P2_0+P1_1+P2_1+M1_0+M2_0+M1_1+M2_1+S_0+S_1)'
 
         #----------------------------------------
         #- internal storage for variables needed later
@@ -100,7 +106,8 @@ class HoleyWaveguide(OptimizationProblem):
         self.source_center   = source_center
         self.source_size     = source_size
 
-        return f_expr, objective_regions, extra_regions, design_region, basis
+        import ipdb; ipdb.set_trace()
+        return fstr, objective_regions, extra_regions, design_region, basis
 
     ##############################################################
     ##############################################################
@@ -112,7 +119,6 @@ class HoleyWaveguide(OptimizationProblem):
 
         wvg=mp.Block(center=origin, material=mp.Medium(epsilon=args.eps_wvg),
                      size=mp.Vector3(self.cell_size.x,args.w_wvg))
-
         disc=mp.Cylinder(center=self.design_center, radius=args.r_disc,
                          epsilon_func=parameterized_dielectric(self.design_center,
                                                                self.basis,
@@ -121,11 +127,10 @@ class HoleyWaveguide(OptimizationProblem):
         geometry=[wvg] if vacuum else [wvg, disc]
 
         envelope = mp.GaussianSource(args.fcen,fwidth=args.df)
-        self.envelope = envelope
         amp=1.0
         if callable(getattr(envelope, "fourier_transform", None)):
-            amp /= envelope.fourier_transform(2.0*mp.pi*args.fcen)
-        sources=[mp.EigenModeSource(src=self.envelope,
+            amp /= envelope.fourier_transform(args.fcen)
+        sources=[mp.EigenModeSource(src=envelope,
                                     center=self.source_center,
                                     size=self.source_size,
                                     eig_band=self.args.source_mode,
@@ -139,7 +144,6 @@ class HoleyWaveguide(OptimizationProblem):
 
         if args.complex_fields:
             sim.force_complex_fields=True
-        sim.init_sim()
 
         return sim
 

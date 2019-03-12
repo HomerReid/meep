@@ -26,6 +26,13 @@ def sinusoid(k,u):
     arg = 2.0*np.pi*np.floor((k+1)/2)*u
     return np.sin(arg) if (k%2) else np.cos(arg)
 
+def sinusoid_names(arg,kmax):
+    sinusoid_names=['1']
+    for nu in range(1,kmax+1):
+        sinusoid_names.append('sin({}{})'.format('' if nu==1 else str(nu),arg))
+        sinusoid_names.append('cos({}{})'.format('' if nu==1 else str(nu),arg))
+    return sinusoid_names
+
 
 ##################################################
 # Plane-wave basis for a rectangular region.
@@ -91,6 +98,13 @@ def fourier_legendre_basis(radius=None, outer_radius=None, inner_radius=0.0,
         return b
 
     return _get_bf_vector
+
+def fl_basis_names(nr_max, kphi_max):
+    snames=sinusoid_names('phi',kphi_max)
+    flb_names=snames[:]
+    for nr in range(1,nr_max+1):
+        flb_names += ['L{}(r)'.format(nr) + ('' if s=='1' else s) for s in snames]
+    return flb_names
 
 #########################################################
 # utility routine to project an arbitrary function f(x)

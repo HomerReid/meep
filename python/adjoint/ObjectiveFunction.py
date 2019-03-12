@@ -1,28 +1,41 @@
-####################################################
+###############################################
 # ObjectiveFunction.py --- routines for evaluating
 # objective quantities and objective functions for
 # adjoint-based optimization in meep
 #####################################################
-import sys
 import datetime
-import re
-import copy
-import sympy
 from collections import namedtuple
 import numpy as np
+import sympy
+
 import meep as mp
 
-import matplotlib.pyplot as plt
+from Basis import project_basis
 
-from . import ObjectiveFunction
-from . import Visualization
-from . import Basis
-
-from .Basis import project_basis
+######################################################################
+# various global options affecting the adjoint solver, user-tweakable
+# via command-line arguments or set_adjoint_option()
+######################################################################
+adjoint_options={
+ 'dft_reltol':          1.0e-6,
+ 'dft_timeout':         10.0,
+ 'dft_interval':        0.25,
+ 'verbosity':           'default',
+ 'visualize':           False,
+ 'logfile':             None,
+ 'plot_pause':          0.01,
+ 'animate_components':  None,
+ 'animate_interval':    1.0
+}
 
 ##################################################
 # some convenient constants and typedefs
 ##################################################
+xHat=mp.Vector3(1.0,0.0,0.0)
+yHat=mp.Vector3(0.0,1.0,0.0)
+zHat=mp.Vector3(0.0,0.0,1.0)
+origin=mp.Vector3()
+
 EHTransverse=[ [mp.Ey, mp.Ez, mp.Hy, mp.Hz],
                [mp.Ez, mp.Ex, mp.Hz, mp.Hx],
                [mp.Ex, mp.Ey, mp.Hx, mp.Hy] ]
@@ -30,37 +43,61 @@ Exyz=[mp.Ex, mp.Ey, mp.Ez]
 Hxyz=[mp.Hx, mp.Hy, mp.Hz]
 EHxyz=Exyz+Hxyz
 
-xHat=mp.Vector3(1.0,0.0,0.0)
-yHat=mp.Vector3(0.0,1.0,0.0)
-zHat=mp.Vector3(0.0,0.0,1.0)
-origin=mp.Vector3()
-
 # GridInfo stores the extents and resolution of the full Yee grid in a MEEP
 # simulation; this is the minimal information needed to compute array metadata.
 GridInfo = namedtuple('GridInfo', ['size', 'res'])
 
-######################################################################
-# various options affecting the adjoint solver, user-tweakable via
-# command-line arguments or set_adjoint_option()
-######################################################################
-adjoint_options={
- 'dft_reltol':    1.0e-6,
- 'dft_timeout':   10.0,
- 'dft_interval':  20.0,
- 'verbosity':     'default',
- 'visualize':     False
-}
-
 ##################################################
-# miscellaneous utility routines
+# miscellaneous utilities
 ##################################################
-def rel_diff(a,b):
-    return 0.0 if a==0.0 and b==0.0 else np.abs(a-b)/np.mean([np.abs(a),np.abs(b)])
+CU=1.0+0.0j    # complex unity, to force numbers to be treated as complex
 
 
 def abs2(z):
     return np.real(np.conj(z)*z)
 
+
+def unit_vector(n,N):
+    return np.array([1.0 if i==n else 0.0 for i in range(N)])
+
+
+# error relative to magnitude, returns value in range [0,2]
+def rel_diff(a,b):
+    return (      2.0    if np.isinf(a) or np.isinf(b)      \
+             else 0.0    if a==0.0 and b==0.0               \
+             else abs(a-b)/max(abs(a),abs(b))               \
+           )
+
+
+def log(msg):
+    if not mp.am_master() or adjoint_options['logfile'] is None:
+        return
+    dt=datetime.datetime.now().strftime("%T ")
+    with open(adjoint_options['logfile'],'a') as f:
+        f.write("{} {}\n".format(dt,msg))
+
+
+#def update_plot(sim, which='Geometry'):
+#    if not mp.am_master() or not adjoint_options['visualize']:
+#        return
+#    nplt=1 if which=='Geometry' else 2 if which=='Forward' else 3
+#    fig=plt.figure(nplt)
+#    fig.clf()
+#    fig.suptitle(which,fontsize='small')
+#    visualize_sim(sim,fig=fig)
+
+
+#####################################################################
+# A FluxLine is essentially a 2D mp.FluxRegion with a convenient constructor
+# prototype and a user-specified label to facilitate identification.
+######################################################################
+FluxLineT=namedtuple('FluxLine','center size direction weight name')
+
+
+def FluxLine(x0,y0,length,dir,name=None):
+    return FluxLineT( center=mp.Vector3(x0,y0),
+                      size=length*(xHat if dir is mp.Y else yHat),
+                      direction=dir, weight=1.0, name=name)
 
 ######################################################################
 # DFTCell is an improved data structure for working with frequency-domain
@@ -122,9 +159,24 @@ def abs2(z):
 # Note: for now, all arrays are stored in memory. For large calculations with
 # many DFT frequencies this may become impractical. TODO: disk caching.
 ######################################################################
+GlobalDFTCellNames=[]
 class DFTCell(object):
 
-    index=0
+#    Why does this not work?! The value of DFTCell.DFTCellNames,
+#    DFTCellNames=[]
+#    @classmethod
+#    def get_index(cls, region_name):
+#        cell_name = region_name + '_flux'
+#        if cell_name in cls.DFTCellNames:
+#            return cls.DFTCellNames.index(cell_name)
+#        raise ValueError("reference to nonexistent DFT cell {}",region_name)
+    @classmethod
+    def get_index(cls, region_name):
+        cell_name = region_name + '_flux'
+        if cell_name in GlobalDFTCellNames:
+            return GlobalDFTCellNames.index(cell_name)
+        raise ValueError("reference to nonexistent DFT cell {}",region_name)
+
 
     ######################################################################
     ######################################################################
@@ -140,24 +192,34 @@ class DFTCell(object):
             self.center, self.size, self.region = origin, grid_info.size, mp.Volume(center=center, size=size)
 
         self.nHat       = region.direction if hasattr(region,'direction') else None
-        self.celltype   = 'flux' if self.nHat is not None else 'fields' # TODO extend to other cases
+        self.celltype   = 'flux' if self.nHat is not None else 'fields'  # TODO extend to other cases
         self.components =       components if components is not None                    \
                            else EHTransverse[self.nHat] if self.celltype is 'flux'      \
-                           else Exyz
+                           else EHxyz
         self.fcen       = fcen
         self.df         = df if nfreq>1 else 0.0
         self.nfreq      = nfreq
-        self.freqs      = [fcen] if nfreq==0 else np.linspace(fcen-0.5*df, fcen+0.5*df, nfreq)
+        self.freqs      = [fcen] if nfreq==1 else np.linspace(fcen-0.5*df, fcen+0.5*df, nfreq)
 
         self.sim        = None  # mp.simulation for current simulation
         self.dft_obj    = None  # meep DFT object for current simulation
 
         self.EH_cache   = {}    # cache of frequency-domain field data computed in previous simulations
-
         self.eigencache = {}    # cache of eigenmode field data to avoid redundant recalculationsq
 
-        DFTCell.index += 1
-        self.name = name if name else '{}_{}'.format(self.celltype, DFTCell.index)
+        self.name = name
+        if self.name is None:
+            if hasattr(self.region,'name'):
+                self.name = '{}_{}'.format(self.region.name, self.celltype)
+            elif grid_info and self.size==grid_info.size:
+                self.name = 'fullgrid_{}'.format(self.celltype)
+            else:
+                 self.name = '{}_{}'.format(self.celltype, len(GlobalDFTCellNames))
+#                self.name = '{}_{}'.format(self.celltype, len(self.DFTCellNames))
+#        self.DFTCellNames.append(self.name)
+ ##################################################
+        GlobalDFTCellNames.append(self.name)
+ ##################################################
 
         # FIXME At present the 'xyzw' metadata cannot be computed until a mp.simulation / meep::fields
         #       object has been created, but in fact the metadata only depend on the GridInfo
@@ -176,7 +238,7 @@ class DFTCell(object):
     def register(self, sim):
         self.sim     = sim
         self.dft_obj =      sim.add_flux(self.fcen,self.df,self.nfreq,self.region) if self.celltype=='flux'   \
-                       else sim.add_dft_fields(self.components, self.fcen, self.df, self.nfreq, where=self.region)
+                       else sim.add_dft_fields(self.components, self.freqs[0], self.freqs[-1], self.nfreq, where=self.region)
 
         # take the opportunity to fill in the metadata if not done yet; #FIXME to be removed as discussed above
         if self.xyzw is None:
@@ -193,7 +255,7 @@ class DFTCell(object):
     # identically by symmetry), this routine returns an array of the expected
     # dimensions with all zero entries, instead of a rank-0 array that prints
     # out as a single preposterously large or small floating-point number,
-    # which is the not-very-user-friendly behavior of get_dft_array().
+    # which is the not-very-user-friendly behavior of mp.get_dft_array().
     ######################################################################
     def get_EH_slice(self, c, nf=0):
         EH = self.sim.get_dft_array(self.dft_obj, c, nf)
@@ -213,15 +275,15 @@ class DFTCell(object):
             return [ self.get_EH_slice(c, nf=nf) for c in self.components ]
         elif label in self.EH_cache:
             return self.EH_cache[label][nf]
-        raise ValueError("data for label {} missing in get_EH_slices".format(label))
+        raise ValueError("DFTCell {} has no saved data for label '{}'".format(self.name, label))
 
     ######################################################################
     # substract incident from total fields to yield scattered fields
     ######################################################################
     def subtract_incident_fields(self, EHT, nf=0):
         EHI = self.get_EH_slices(nf=nf, label='incident')
-        for nc,c in enumerate(self.components):
-            EHTData[nc] -= EHIData[nc]
+        for nc, c in enumerate(self.components):
+            EHT[nc] -= EHI[nc]
 
     ####################################################################
     # This routine tells the DFTCell to create and save an archive of
@@ -233,9 +295,9 @@ class DFTCell(object):
     # is complete. The given label is used to identify the stored data
     # for purposes of future retrieval.
     ######################################################################
-    def save_fields(self,label):
+    def save_fields(self, label):
         if label in self.EH_cache:
-            raise ValueError("Data for label {} has already been saved in EH_cache",label)
+            raise ValueError("DFTCell {}: data for label {} has already been saved in cache".format(self.name,label))
         self.EH_cache[label] = [self.get_EH_slices(nf=nf) for nf in range(len(self.freqs))]
 
     ######################################################################
@@ -248,7 +310,9 @@ class DFTCell(object):
 
         # look for data in cache
         tag='M{}.F{}'.format(mode,nf)
+        log('DFTCell {}: Getting eigenfields for tag {}...'.format(self.name,tag))
         if self.eigencache and tag in self.eigencache:
+            log("...found in cache")
             return self.eigencache[tag]
 
         # data not in cache; compute eigenmode and populate slice arrays
@@ -257,59 +321,70 @@ class DFTCell(object):
         vol=mp.Volume(self.region.center,self.region.size)
         k_initial=mp.Vector3()
         eigenmode=self.sim.get_eigenmode(freq, dir, vol, mode, k_initial)
-        eh_slices=[]
-        x,y,z,w=self.xyzw[0], self.xyzw[1], self.xyzw[2], self.xyzw[3]
-        xyz = [mp.Vector3(xx,yy,zz) for xx in x for yy in y for zz in z]
-        for c in self.components:
-            slice, nxyz = 0.0j*np.zeros(self.slice_dims), 0
-            for n,ww in np.ndenumerate(w):
-                slice[n]=eigenmode.amplitude(xyz[nxyz], c)
-                nxyz+=1
-            eh_slices.append(slice)
+
+        def get_eigenslice(eigenmode, xyzw, c):
+            slice=[eigenmode.amplitude(mp.Vector3(x,y,z), c)            \
+                    for x in xyzw[0] for y in xyzw[1] for z in xyzw[2]
+                  ]
+            return np.reshape(slice,self.slice_dims)
+
+        eh_slices=[get_eigenslice(eigenmode,self.xyzw,c) for c in self.components]
 
         # store in cache before returning
         if self.eigencache is not None:
-            print("Adding eigenfields for tag {}".format(tag))
+            log("Adding eigenfields for tag {}".format(tag))
             self.eigencache[tag]=eh_slices
 
         return eh_slices
 
     ##################################################
     # compute an objective quantity, i.e. an eigenmode
-    # coefficient or a scattered or total power
+    # coefficient or a scattered or total power.
     ##################################################
-    def EvalQuantity(self, qtype, mode, nf=0):
+    def eval_quantity(self, qcode, mode, nf=0):
 
         w  = self.xyzw[3]
         EH = self.get_EH_slices(nf)
-        if qtype.islower():
+        if qcode.islower():
              self.subtract_incident_fields(EH,nf)
 
-        if qtype in 'sS':
+        if qcode in 'sS':
             return 0.25*np.real(np.sum(w*( np.conj(EH[0])*EH[3] - np.conj(EH[1])*EH[2]) ))
-        elif qtype in 'PM':
+        elif qcode in 'PM':
             eh = self.get_eigenfield_slices(mode, nf)  # EHList of eigenmode fields
             eH = np.sum( w*(np.conj(eh[0])*EH[3] - np.conj(eh[1])*EH[2]) )
             hE = np.sum( w*(np.conj(eh[3])*EH[0] - np.conj(eh[2])*EH[1]) )
-            sign=1.0 if qtype=='P' else -1.0
-            return (eH + sign*hE)/2.0
+            sign=1.0 if qcode=='P' else -1.0
+            return (eH + sign*hE)/8.0
         else: # TODO: support other types of objectives quantities?
-            ValueError('unsupported quantity type')
+            ValueError('DFTCell {}: unsupported quantity type {}'.format(self.name,qcode))
 
+#########################################################
+# a 'qrule' is a specification for how to evaluate an
+# objective quantity: which DFT cell, which physical
+# quantity (power flux, eigenmode coefficient, etc,
+# encoded in 'code') and (if necessary) which eigenmode.
+# qrules are constructed from the string names of
+# objective variables like 'P2_3' or 'M1_north' or 's_0'.
+#########################################################
+qrule = namedtuple('qrule', 'code mode ncell')
 
-#def flux_line(x0, y0, length, dir):
-#    size=length*(xHat if dir is mp.Y else yhat/
-#    return mp.FluxRegion(center=mp.Vector3(x0,y0), size=size, direction=dir)
+def qname_to_qrule(qname):
 
-
+    pieces=qname.split('_')
+    codemode, cellstr = pieces[0], '_'.join(pieces[1:])
+    ncell=int(cellstr) if cellstr.isdigit() else DFTCell.get_index(cellstr)
+    if codemode.upper()=='S':
+        return qrule(codemode, 0, ncell)
+    elif codemode[0] in 'PM':
+        if codemode[1:].isdigit() and int(codemode[1:])>0:
+            return qrule(codemode[0], int(codemode[1:]) , ncell)
+        raise ValueError("Objective quantity {}: invalid mode index {}".format(qname,codemode[1:]))
+    raise ValueError("Objective quantity {}: unknown quantity code {}".format(qname,codemode[0]))
 
 #########################################################
 # ObjectiveFunction is a simple class for evaluating
-# arbitrary user-specified objective functions; its data are
-# (a) a mathematical expression for the function (a
-#     character string in which the names of various
-#     objective quantities like 'S_0' or 'P1_1' appear), and
-# (b) the dft_cells needed to compute the objective quantities.
+# a scalar function of multiple variables.
 #########################################################
 class ObjectiveFunction(object):
 
@@ -318,73 +393,74 @@ class ObjectiveFunction(object):
     # names for all input variables (objective quantities) needed to
     # evaluate it
     ######################################################################
-    def __init__(self, objective_cells, f_str='S0'):
+    def __init__(self, fstr='S_0'):
+
+        # try to parse the function string to yield a sympy expression
         try:
-            self.f_expr = sympy.sympify(f_str)
+            fexpr = sympy.sympify(fstr)
         except:
-            raise ValueError("failed to parse function {}".format(f_str))
-        self.qnames=[str(s) for s in self.f_expr.free_symbols]
-        self.qnames.sort()
-        self.qvalues=np.zeros(len(self.qnames))
-        self.qdict={}
-        self.objective_cells = objective_cells
-        # sanity check names of all objective quantities
-        for q in self.qnames:
-            qtype,mode,ncell = ObjectiveFunction.unpack_quantity_name(q) # aborts on parse error
-            if ncell >= len(objective_cells):
-                raise ValueError("quantity {}: reference to non-existent objective cell".format(q))
-        #/*!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!*/
-        self.sim=None
-        #/*!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!*/
+            raise ValueError("failed to parse function {}".format(fstr))
 
-    #########################################################
-    # attempt to parse the name of an objective quantity like
-    # 'P2_3' or 's_4'. On success, return triple
-    # (qtype, eigenmode_index, region_index).
-    #########################################################
-    @staticmethod
-    def unpack_quantity_name(qname):
+        # qnames = names of all objective quantities (i.e. all symbols
+        #          identified by sympy as quantities on which fexpr depends)
+        fprime = sympy.sympify(fstr.replace('0.0','1.0'))
+        self.qnames = [str(s) for s in fprime.free_symbols]
 
-        # mode coefficient: look for a match of the form 'P1_2' or 'F2_0'
-        mode_match=re.search(r'([PM])([1-9]*)_([0-9])',qname)
-        if mode_match is not None:
-            return mode_match[1], int(mode_match[2]), int(mode_match[3])
+        # qrules = 'qrules' for all objective quantities, where a 'qrule'
+        #          is metadata defining how a quantity is computed
+        self.qrules = [qname_to_qrule(qn) for qn in self.qnames]
 
-        # total/scattered power: look for a match of the form 'S_1' or 's_2'
-        flux_match=re.search(r'([Ss])_([0-9])',qname)
-        if flux_match is not None:
-            return flux_match[1], 0, int(flux_match[2])
+        # qvals = cached values of objective quantities
+        self.qvals = 0.0j*np.zeros(len(self.qnames))
 
-        raise ValueError("invalid quantity name " + qname)
+        # for each (generally complex-valued) objective quantity,
+        # we now introduce two real-valued symbols for the real and
+        # imaginary parts, stored in riqsymbols. q2ri is a dict of
+        # sympy substitutions q -> qr + I*qi that we use below to
+        # recast fexpr as a function of the ri quantities. riqvals
+        # is a dict of numerical values of the ri quantities used
+        # later to evaluate f and its partial derivatives.
+        self.riqsymbols, self.riqvals, q2ri = [], {}, {}
+        for nq,(qn,qs) in enumerate(zip(self.qnames,fprime.free_symbols)):
+            rqn, iqn = 'r'+qn, 'i'+qn
+            rqs, iqs = sympy.symbols( [rqn, iqn], real=True)
+            q2ri[qs] = rqs + iqs*sympy.I
+            self.riqvals[rqn]=self.riqvals[iqn]=0.0
+            self.riqsymbols += [rqs, iqs]
 
+        self.fexpr = fexpr.subs(q2ri)
 
-  ######################################################################
-  # (re)compute the values of all objective quantities.
-  ######################################################################
-    def update_quantities(self, nf=0):
-        for nq, qname in enumerate(self.qnames):
-            qtype, mode, ncell = ObjectiveFunction.unpack_quantity_name(qname)
-            qvalue=self.objective_cells[ncell].EvalQuantity(qtype, mode, nf=nf)
-            self.qvalues[nq]=self.qdict[qname]=qvalue
+        # expressions for partial derivatives, dfexpr[q] = \partial f / \partial q_n
+        self.dfexpr=[]
+        for nq in range(len(self.qnames)):
+            df_drqn = sympy.diff(self.fexpr,self.riqsymbols[2*nq+0])
+            df_diqn = sympy.diff(self.fexpr,self.riqsymbols[2*nq+1])
+            self.dfexpr.append( df_drqn - sympy.I*df_diqn )
 
 
   ######################################################################
-  # evaluate the objective function
   ######################################################################
-    def eval(self):
-        self.update_quantities()
-        val=self.f_expr.evalf(subs=self.qdict)
-        return complex(val) if val.is_complex else float(val)
+  ######################################################################
+#    def promote_complex(f):
+#        return complex(f) if f.is_complex else float(f)
 
+    def get_fq(self, DFTCells, nf=0):
 
-  ######################################################################
-  # evaluate partial derivatives of the objective function (assumes
-  # internally-stored quantity values are up to date, i.e. that no
-  # timestepping has happened since the last call to update_quantities)
-  ######################################################################
-    def partial(self, qname):
-        val=sympy.diff(f_expr,qname).evalf(subs=self.qdict)
-        return complex(val) if val.is_complex else float(val)
+        # fetch updated values for all objective quantities
+        for nq, qr in enumerate(self.qrules):
+            self.qvals[nq] = CU*DFTCells[qr.ncell].eval_quantity(qr.code,qr.mode,nf)
+            self.riqvals[self.riqsymbols[2*nq+0]]=np.real(self.qvals[nq])
+            self.riqvals[self.riqsymbols[2*nq+1]]=np.imag(self.qvals[nq])
+
+        # plug in objective-quantity values to get value of objective function
+        fval=self.fexpr.evalf(subs=self.riqvals)
+        fval=complex(fval) if fval.is_complex else float(fval)
+
+        return np.array( [fval] + list(self.qvals) )
+
+    # compute values of all partial derivatives \partial f / \partial q
+    def get_partials(self):
+        return np.array( [ df.evalf(subs=self.riqvals) for df in self.dfexpr ] )
 
 #########################################################
 # end of ObjectiveFunction class definition
@@ -393,155 +469,179 @@ class ObjectiveFunction(object):
 #########################################################
 #########################################################
 #########################################################
-def eval_gradient(sim, dft_cells, basis, nf=0):
+class AdjointSolver(object):
 
-     gradient=0.0j*np.zeros(len(basis()))
-     cell=dft_cells[-1] # design cell
-     EHForward=cell.get_EH_slices(nf,label='forward')
-     EHAdjoint=cell.get_EH_slices(nf) # no label->current simulation
-     f=0.0j*np.ones(cell.slice_dims)
-     for nc,c in enumerate(cell.components):
-         if c not in Exyz:
-             continue
-         f+=EHForward[nc]*EHAdjoint[nc]
-     return project_basis(basis,cell.xyzw,f)
+    #########################################################
+    #########################################################
+    #########################################################
+    def __init__(self, obj_func, dft_cells, basis, sim, vis=None):
 
-#########################################################
-# Given a list of DFT cells, continue timestepping until the
-# frequency-domain fields have stopped changing within the
-# specified relative tolerance or the time limit is reached.
-#########################################################
-def run_until_dfts_converged(sim, dft_cells, obj_func, basis=None):
+        self.obj_func    = obj_func
+        self.dft_cells   = dft_cells
+        self.basis       = basis
+        self.sim         = sim
+        self.vis         = vis
 
-    #last_source_time=sim.fields.last_source_time()
-    last_source_time=sim.sources[0].src.swigobj.last_time_max
-    max_time=adjoint_options['dft_timeout']*last_source_time()
-    verbose=(adjoint_options['verbosity']=='verbose')
-    reltol=adjoint_options['dft_reltol']
-    check_interval=adjoint_options['dft_interval']
+        # prefetch names of outputs computed by forward and
+        # adjoint solves, for use in writing log files
+        self.fqnames     = ['f'] + obj_func.qnames
+        self.bnames      = ['b'+str(n) for n in range(len(self.basis()))]
 
-    # run without interruption until the sources have died out
-    for cell in dft_cells:
-        cell.register(sim)
-    sim.init_sim()
-    sim.run(until=sim.fields.last_source_time())
+    #########################################################
+    #########################################################
+    #########################################################
+    def eval_fq(self, nf=0):
+        return self.obj_func.get_fq(self.dft_cells,nf=nf)
 
-    # now continue running with periodic convergence checks until
-    # convergence is established or we time out.
-    # convergence means that all relevant quantities have stopped
-    # changing to within the specified tolerances; the relevant
-    # quantities are (a) values of the objective function and of
-    # all objective quantities for the forward run, (b) values of
-    # all gradient components for the adjoint run. The latter case
-    # is distinguished from the former by a non-None value for the
-    # 'basis' input parameter.
-    next_check_time = sim.round_time() + check_interval
-    if basis:
-        Q       = eval_gradient(sim, dft_cells, basis)
-        Q_names = ['b{}'.format(n) for n in range(len(basis()))]
-    else:
-        Q       = np.array( [obj_func.eval()] + obj_func.qvalues )
-        Q_names = ['F'] + obj_func.qnames
-    last_Q = Q
-    while True:
-        sim.run(until=next_check_time)
-        next_check_time += check_interval
-        next_check_time = min(next_check_time, max_time)
+    def eval_gradf(self, nf=0):
+        gradient=0.0j*np.zeros(len(self.basis()))
+        cell=self.dft_cells[-1] # design cell
+        EH_forward=cell.get_EH_slices(nf,label='forward')
+        EH_adjoint=cell.get_EH_slices(nf) # no label->current simulation
+        f=np.sum( [EH_forward[nc]*EH_adjoint[nc]
+                      for nc,c in enumerate(cell.components) if c in Exyz], 0 )
+#        f=0.0j*np.ones(cell.slice_dims)
+#        for nc,c in enumerate(cell.components):
+#            if c not in Exyz:
+#                continue
+#            f+=EH_forward[nc]*EH_adjoint[nc]
+        return project_basis(self.basis,cell.xyzw,f)
 
-        if basis:
-            Q = eval_gradient(sim, dft_cells, basis)
-        else:
-            Q = np.array( [obj_func.eval()] + obj_func.qvalues )
-        delta = np.abs(Q-last_Q)
-        rel_delta=[rel_diff(x,last_x) for x,last_x in zip(Q,last_Q)]
-        max_rel_delta=max(rel_delta)
-        last_Q=Q
+    #########################################################
+    #########################################################
+    #########################################################
+    def run_until_converged(self, case='forward'):
 
-        if mp.am_master() and verbose:
-           dt=datetime.datetime.now().strftime("%T ")
-           sys.stdout.write("\n**\n**%s %5i %.0e\n**\n" % (dt,sim.round_time(),max_rel_delta))
-           [sys.stdout.write("{:10s}: {:+.4e}({:.1e})\n".format(n,q,e)) for n,q,e in zip(Q_names,Q,rel_delta)]
-           sys.stdout.write("]\n\n")
+        last_source_time = self.sim.sources[0].src.swigobj.last_time_max()
+        verbose          = (adjoint_options['verbosity'] == 'verbose')
+        reltol           = adjoint_options['dft_reltol']
+        max_time         = adjoint_options['dft_timeout']*last_source_time
+        check_interval   = adjoint_options['dft_interval']*last_source_time
+        names            = self.bnames if case=='adjoint' else self.fqnames
 
-        if max_rel_delta<=reltol or sim.round_time()>=max_time:
-            return Q
+        # register DFT cells
+        self.sim.init_sim()
+        [cell.register(self.sim) for cell in self.dft_cells]
 
-##############################################################
-##############################################################
-##############################################################
-def place_adjoint_sources(sim, envelope, qname, dft_cells):
+        #update_plot(self.sim, which='Geometry')
+        if self.vis:
+            self.vis.update(self.sim,'Geometry')
 
-   freq     = envelope.frequency
-   omega    = 2.0*np.pi*freq
-   factor   = 2.0j*omega
-   if callable(getattr(envelope, "fourier_transform", None)):
-       factor /= envelope.fourier_transform(omega)
+        # construct field-animation step function if requested
+        step_funcs = []
+        acs = adjoint_options['animate_components']
+        if acs is not None:
+            ivl=adjoint_options['animate_interval']
+            step_funcs = [ plot_field_components(self.sim, components=acs, interval=ivl) ]
 
-   nf=0
-   (qtype,mode,ncell)=ObjectiveFunction.unpack_quantity_name(qname)
-   cell=dft_cells[ncell]
+        log("Beginning {} timestepping run...".format(case))
+        self.sim.run(*step_funcs, until=self.sim.fields.last_source_time())
 
-   EH =     cell.get_EH_slices(nf=nf,label='forward')  if mode==0 \
-       else cell.get_eigenfield_slices(mode=mode,nf=0)
+        if self.vis:
+            self.vis.update(self.sim,'ForwardFD')
 
-   components = cell.components
-   (x,y,z,w)  = cell.xyzw[0],cell.xyzw[1],cell.xyzw[2],cell.xyzw[3]
-   shape      = [np.shape(q)[0] for q in [x,y,z]]
+        # now continue timestepping with periodic convergence checks until
+        # we converge or timeout
+        last_vals = np.inf*np.ones(len(names))
+        max_rel_delta=np.inf
+        next_check_time=self.sim.round_time()
+        while True:
+            self.sim.run(*step_funcs, until=next_check_time)
+            next_check_time = min(next_check_time + check_interval, max_time)
 
-   if qtype in 'PM':
-       sign = 1.0 if qtype=='P' else -1.0
-       signs=[+1.0,-1.0,+1.0*sign,-1.0*sign]
-       sim.sources+=[mp.Source(envelope, components[3-nc],
-                               cell.center, cell.size,
-                               amplitude=signs[nc]*factor,
-                               amp_data=np.reshape(np.conj(EH[nc]),shape)
-                              ) for nc in range(4)]
+            vals = self.eval_gradf() if case=='adjoint' else self.eval_fq()
 
-########################################################
-# do a forward timestepping run to compute the value of
-# the objective function. The return value is a tuple
-# (F,Q), where F is the scalar objective-function value
-# and Q is the vector of objective-quantity values.
-########################################################
-def get_objective(sim, obj_func, dft_cells):
+            rel_delta = [rel_diff(v,last_v) for v,last_v in zip(vals,last_vals)]
+            last_vals = vals
+            max_rel_delta=max(rel_delta)
 
-    #/*!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!*/
-    obj_func.sim=sim
-    #/*!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!*/
+            log(' ** t={} MRD={} ** '.format(self.sim.round_time(),max_rel_delta))
+            if verbose:
+                [log('{:10s}: {:+.4e}({:.1e})'.format(n,v,e)) for n,v,e in zip(names,vals,rel_delta)]
+                [log('')]
 
-    FQ=run_until_dfts_converged(sim, dft_cells, obj_func=obj_func)
-
-    if adjoint_options['visualize']:
-        fig=plt.figure(2)
-        plt.clf()
-        visualize_sim(sim)
-
-    return FQ[0]
+            if max_rel_delta<=reltol or self.sim.round_time()>=max_time:
+                return vals
 
 
-########################################################
-# same as previous routine, but now followed by an
-# adjoint run to compute the objective-function gradient
-# with respect to the basis-function coefficients.
-########################################################
-def get_objective_and_gradient(sim, obj_func, dft_cells,
-                               basis, qname=None):
+    ##############################################################
+    ##############################################################
+    ##############################################################
+    def place_adjoint_sources(self, qweights):
 
-    # do the forward run and save the frequency-domain fields
-    # in all objective regions and in the design region
-    F=get_objective(sim, obj_func, dft_cells)
-    for cell in dft_cells:
-        cell.save_fields('forward')
+        # extract temporal envelope of forward sources from existing simulation
+        envelope = self.sim.sources[0].src
+        freq     = envelope.frequency
+        omega    = 2.0*np.pi*freq
+        factor   = 2.0j*omega
+        if callable(getattr(envelope, "fourier_transform", None)):
+            factor /= envelope.fourier_transform(freq)
 
-    # remove the forward sources and replace with adjoint sources
-    envelope=sim.sources[0].src
-    sim.reset_meep()
-    sim.change_sources([])
-    qname=qname if qname else obj_func.qnames[0]
-    place_adjoint_sources(sim,envelope,qname,dft_cells)
+        ##################################################
+        # loop over all objective quantities, adding
+        # appropriately-weighted adjoint sources for each
+        # quantity
+        ##################################################
+        self.sim.reset_meep()
+        self.sim.change_sources([])
+        nf=0
+        for qr, qw in zip(self.obj_func.qrules, qweights):
 
-    # do the adjoint run
-    sim.force_complex_fields=True
-    gradF =run_until_dfts_converged(sim, dft_cells, obj_func, basis=basis)
+            if qw==0.0:
+                continue
 
-    return F, gradF
+            code, mode, cell=qr.code, qr.mode, self.dft_cells[qr.ncell]
+            EH =      cell.get_EH_slices(nf=nf, label='forward')  if mode==0 \
+                 else cell.get_eigenfield_slices(mode=mode, nf=0)
+
+            components  = cell.components
+            x, y, z, w  = cell.xyzw[0], cell.xyzw[1], cell.xyzw[2], cell.xyzw[3]
+            shape       = [np.shape(q)[0] for q in [x,y,z]]
+
+            if code in 'PM':
+                sign = 1.0 if code=='P' else -1.0
+                signs=[+1.0,-1.0,+1.0*sign,-1.0*sign]
+                self.sim.sources+=[mp.Source(envelope, cell.components[3-nc],
+                                             cell.center, cell.size,
+                                             amplitude=signs[nc]*factor*qw,
+                                             amp_data=np.reshape(np.conj(EH[nc]),shape)
+                                            ) for nc in range(len(components))
+                                  ]
+
+        self.sim.force_complex_fields=True
+
+    ########################################################
+    ########################################################
+    ########################################################
+    def solve(self, need_gradient=False):
+
+        # forward run
+        fq=self.run_until_converged(case='forward')
+
+        #update_plot(self.sim,which='Forward')
+        if self.vis:
+            self.vis.update(self.sim,'ForwardFD')
+
+        if need_gradient==False:
+            return fq[0], 0
+
+        for cell in self.dft_cells:
+            cell.save_fields('forward')
+
+        # adjoint run(s)
+        qweights=self.obj_func.get_partials()
+        self.place_adjoint_sources(qweights)
+        gradf=self.run_until_converged(case='adjoint')
+        #update_plot(self.sim,which='Adjoint')
+        if self.vis:
+            self.vis.update(self.sim,'AdjointFD')
+
+        return fq[0], gradf
+
+    ########################################################
+    ########################################################
+    ########################################################
+    def get_gradq(self, qname):
+        qweights=[1.0 if qn==qname else 0.0 for qn in self.obj_func.qnames]
+        self.place_adjoint_sources(qweights)
+        return self.run_until_converged(case='adjoint')
