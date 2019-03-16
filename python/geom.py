@@ -411,7 +411,6 @@ class Prism(GeometricObject):
         self.vertices = vertices
         self.height = height
         self.axis = axis
-
         super(Prism, self).__init__(center=center, **kwargs)
 
 

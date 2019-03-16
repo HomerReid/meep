@@ -17,98 +17,31 @@ $$
 
 This tutorial introduces <span class=SC>meep</span>'s support
 for [*adjoint-based sensitivity analysis*](https://en.wikipedia.org/wiki/Adjoint_state_method)
-to facilitate automated design optimization using derivative-based numerical optimizers.
+to facilitate automated design optimization via derivative-based
+numerical optimizers.
 
 ## Overview
 --------------------------------
 
-### Adjoint-based optimization
-
-A common task in electromagnetic engineering is to custom-tune the design
-of some component of a system---a waveguide taper, a power splitter,
-an input coupler, an antenna, etc.---to optimize the performance of the system
-as defined by some problem-specific metric. For our purposes,
-a "design" will consist of a specification of the spatially-varying
-scalar permittivity $\epsilon(\mathbf x)$ in some subregion
-of a <span class=SC>meep</span> geometry, and the performance metric
-will be a physical quantity computed from frequency-domain
-fields---a 
-[power flux](../Python_User_Interface.md#get_fluxes),
-an [energy density](../Python_User_Interface.md#dft_energy),
-an
-[eigenmode expansion coefficient](../Python_User_Interface.md#get_eigenmode_coefficients),
-or perhaps some mathematical function of one or more of these
-quantities. We will shortly present a smorgasbord of examples; for now,
-perhaps a good one to have in mind is the hole cloak problem, in which a
-chunk of material has been removed from an otherwise perfect waveguide
-section, ruining the otherwise perfectly unidirectional (no scattering or reflection)
-flow of power from a source at one end of the guide to a sink at the other;
-our task is to tweak the permittivity in an annular region
-surrounding the defect so as to restore as much as possible the reflectionless 
-transfer of power across the waveguide---thus "hiding" or "cloaking"
-the defect.
-
-Now, given a candidate design
-$\epsilon\sup{trial}(\mathbf{x})$, it's easy enough to see
-how we can use <span class=SC>meep</span> to evaluate
-our objective function---just define a
-<span class=SC>meep</span> geometry with $\epsilon\sup{trial}$ as a
-[spatially-varying permittivity function](../Python_User_Interface.md#eps_func)
-in the design region,
-add [DFT cells](../Python_User_Interface.md#FluxSpectra)
-to tabulate frequency-domain fields in the regions of interest,
-[timestep](../Python_User_Interface.md#RunStepFunctions) until 
-the DFTs converge, and use post-processing routines like
-[`get_fluxes()`](../Python_User_Interface.md#get_fluxes)
-or perhaps
-[`get_eigenmode_coefficients()`](../Python_User_Interface.md#get_eigenmode_coefficients)
-to get the quantities needed to evaluate the performance of the device.
-Thus, for the cost of one full <span class=SC>meep</span> timestepping
-run we obtain the value of our objective function at one point
-in the parameter space of possible inputs.
-
-But *now* what do we do?! The difficulty is that the computation
-just described furnishes only the *value* of the objective function
-for a given input, not its *derivatives* with respect to the
-design variables---and thus yields zero insight into how we should
-tweak the design to improve performance.
-In simple cases we might hope to get somewhere with just
-engineering design intuition---like in the old days!---while
-for small problems with just a few parameters we might try our luck with a
-[derivative-free optimization algorithm](https://en.wikipedia.org/wiki/Derivative-free_optimization);
-however, both of these approaches will run out of steam long before
-we scale up to 
-the full complexity of a practical problem with thousands
-of degrees of freedom.
-Alternatively, we could get approximate derivative information by brute-force
-finite-differencing---slightly tweaking one design variable, repeating 
-the full timestepping run, and asking how the results changed---but 
-proceeding this way to compute derivatives with respect to all $D$ 
-design variables would require fully $D$ separate timestepping runs;
-for the problem sizes we have in mind, this would make calculating the 
-objective-function gradient
-*several thousand times* more costly than calculating its value.
-So we face a dilemma: How can we obtain the derivative information
-necessary for effective optimization in a reasonable amount of time?
-This is where adjoints come to the rescue.
-
-The *adjoint method* of sensitivity analysis is a technique in which
-we exploit certain facts about the physics of a problem and the
-consequent mathematical structure---specifically, in this case, the
-linearity and reciprocity of Maxwell's equations---to rearrange the
-calculation of derivatives in a way that yields an *enormous* speedup
-over the brute-force finite-difference approach. More specifically,
-after we have computed the objective-function value by doing
-the full <span class=SC>meep</span> timestepping run mentioned
-above---the "forward" run in adjoint-method parlance---we can magically
-compute its derivatives with respect to *all* design variables by doing
-just *one* additional timestepping run with a funny-looking choice
-of sources and outputs (the "adjoint" run).
-Thus, whereas gradient computation via finite-differencing is at least $D$
-times more expensive than computing the objective function value,
-with adjoints we get both value and gradient for roughly just *twice* the
-cost of the value alone. Such a bargain! At this modest cost, derivative-based 
-optimization becomes entirely feasible.
+Many applications in modern science and engineering require
+custom-engineered structures---for photonic devices,
+microwave antennas, diffraction gratings, or other
+functional components---in which the design of the
+material geometry must be carefully tuned to achieve
+optimal performance according to some application-specific
+evaluation metric. In the problems we will
+consider, the tunable design variable
+will be the distribution of dielectric material
+in some subregion of a device geometry---characterized
+by the spatially varying
+scalar permittivity function
+$\epsilon\sup{des}(\mathbf x)$ in that
+subregion---and the objective will
+typically be to maximize or minimize
+power fluxes, mode-expansion coefficients, or
+other similar performance benchmarks defined
+in terms of the electromagnetic fields
+in some subregion of our geometry.
 
 ??? note "**More general materials**"
     <small>
@@ -122,12 +55,15 @@ optimization becomes entirely feasible.
     </small>
 
 
-### Examples of optimization problems
+### Simple examples of optimization problems
 
-Throughout this tutorial we will refer to a running collection of simple optimization
-problems to illustrate the mechanics of optimization in <span class=SC>meep</span>.
-
-
+By way of immediate example,
+throughout this tutorial we will
+consider a collection of simple, prototypical
+optimization problems as running examples
+to illustrate the mechanics of optimization
+in <span class=SC>meep</span>. Our sample
+set includes
 
 ### Common elements of optimization geometries: Objective regions, objective functions, design regions, basis sets
 
@@ -180,6 +116,57 @@ some common features that will be present in every
     numerical values for the $N$-vector of coefficients 
     $\boldsymbol{\beta}=\{\beta_n\},n=1,\cdots,N.$
     
+
+### Adjoint-based optimization
+Given an optimization geometry and a trial candidate for the
+design function [call it
+$\epsilon\sup{trial}(\mathbf{x})$], it's easy enough to see
+how we can use <span class=SC>meep</span> to evaluate
+our objective function---just define a
+<span class=SC>meep</span> geometry with $\epsilon\sup{trial}$ as a
+[spatially-varying permittivity function](../Python_User_Interface.md#eps_func),
+in the design region, define [DFT cells](../Python_User_Interface.md#FluxSpectra)
+to compute frequency-domain fields in the objective regions,
+[timestep](../Python_User_Interface.md#RunStepFunctions) until 
+the DFTs converge, then use post-processing routines like
+[`get_fluxes()`](../Python_User_Interface.md#get_fluxes)
+or
+[`get_eigenmode_coefficients()`](../Python_User_Interface.md#get_eigenmode_coefficients)
+to get the quantities needed to evaluate the objective function.
+Thus, for the cost of one full <span class=SC>meep</span> timestepping
+run we obtain the value of our objective function at one point
+in the $N$-dimensional parameter space of possible inputs.
+
+But *now* what do we do?! The difficulty is that the computation
+just described furnishes only the *value* of the objective function
+for a given input, not its *derivatives* with respect to the
+design variables---and thus yields zero insight into how we should
+tweak the design to improve performance. 
+For small problems with just a few parameters we might try our luck with a
+[derivative-free optimization algorithm](https://en.wikipedia.org/wiki/Derivative-free_optimization),
+but 
+Alternatively, we could get derivative information by brute-force 
+finite-differencing---slightly
+tweaking one design variable, repeating the full timestepping run,
+and asking how the results changed---but proceeding this way
+to compute derivatives with respect to all $N$ design variables
+would require fully $N$ separate timestepping
+runs, a thoroughly hopeless prospect for a complicated structure 
+with thousands or millions of degrees of freedom.
+Is there no way to estimate the full $N$-dimensional 
+gradient in a reasonable amount of time? 
+
+
+
+which may have thousands of 
+components this 
+respect to all $N$ variables
+derivatives with respect
+to all $N$ variables would require doing $N$
+full timestepping runs
+of the objective function with respect to 
+
+
 ### Mechanics of <span class=SC>meep</span> design optimization: A choice of two tracks
 is 
 

@@ -79,6 +79,9 @@ void display_geometric_object_info(int indentby, GEOMETRIC_OBJECT o);
   import_array();
 %}
 
+/***************************************************************/
+/* inline C/C++ functions     **********************************/
+/***************************************************************/
 %{
 typedef struct {
     PyObject *func;
@@ -525,7 +528,11 @@ void _get_eigenmode(meep::fields *f, double omega_src, meep::direction d, const 
     meep::abort("Must compile Meep with MPB for get_eigenmode");
 }
 #endif
+
 %}
+/***************************************************************/
+/* end of inline C/C++ functions     ***************************/
+/***************************************************************/
 
 %numpy_typemaps(std::complex<meep::realnum>, NPY_CDOUBLE, int);
 %numpy_typemaps(std::complex<double>, NPY_CDOUBLE, size_t);

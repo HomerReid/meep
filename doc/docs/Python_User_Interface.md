@@ -85,6 +85,8 @@ Holds the default material that is used for points not in any object of the geom
 —
 A Python function that takes a `Vector3` and returns a `Medium`. See also [Medium](#medium). Defaults to `None`.
 
+<a name="eps_func"></a>
+
 **`epsilon_func` [ function ]**
 —
 A Python function that takes a `Vector3` and returns the dielectric constant at that point. See also [Medium](#medium). Defaults to `None`.
@@ -753,6 +755,7 @@ Like `amp_func_file` above, but instead of interpolating into an HDF5 file, inte
 
 As described in Section 4.2 ("Incident Fields and Equivalent Currents") in [Chapter 4](http://arxiv.org/abs/arXiv:1301.5366) ("Electromagnetic Wave Source Conditions") of the book [Advances in FDTD Computational Electrodynamics: Photonics and Nanotechnology](https://www.amazon.com/Advances-FDTD-Computational-Electrodynamics-Nanotechnology/dp/1608071707), it is also possible to supply a source that is designed to couple exclusively into a single waveguide mode (or other mode of some cross section or periodic region) at a single frequency, and which couples primarily into that mode as long as the bandwidth is not too broad. This is possible if you have [MPB](https://mpb.readthedocs.io) installed: Meep will call MPB to compute the field profile of the desired mode, and uses the field profile to produce an equivalent current source. Note: this feature does *not* work in cylindrical coordinates. To do this, instead of a `source` you should use an `EigenModeSource`:
 
+<a name="EigenmodeSource">
 ### EigenModeSource
 
 This is a subclass of `Source` and has **all of the properties** of `Source` above. However, you normally do not specify a `component`. Instead of `component`, the current source components and amplitude profile are computed by calling MPB to compute the modes, $\mathbf{u}_{n,\mathbf{k}}(\mathbf{r}) e^{i \mathbf{k} \cdot \mathbf{r}}$, of the dielectric profile in the region given by the `size` and `center` of the source, with the modes computed as if the *source region were repeated periodically in all directions*. If an `amplitude` and/or `amp_func` are supplied, they are *multiplied* by this current profile. The desired eigenmode and other features are specified by the following properties:
@@ -985,6 +988,8 @@ Given a list of field components `cs`, compute the Fourier transform of these fi
 —
 Given a `direction` constant, and a `mp.Volume`, returns the flux (the integral of $\Re [\mathbf{E}^* \times \mathbf{H}]$) in that volume. Most commonly, you specify a volume that is a plane or a line, and a direction perpendicular to it, e.g. `flux_in_box(d=mp.X,mp.Volume(center=mp.Vector3(0,0,0),size=mp.Vector3(0,1,1)))`. If the `center` and `size` arguments are provided instead of `box`, Meep will construct the appropriate volume for you.
 
+<a name="energy"></a>
+
 **`electric_energy_in_box(box=None, center=None, size=None)`**
 —
 Given a `mp.Volume`, returns the integral of the electric-field energy $\mathbf{E}^* \cdot \mathbf{D}/2$ in the given volume. If the volume has zero size along a dimension, a lower-dimensional integral is used. If the `center` and `size` arguments are provided instead of `box`, Meep will construct the appropriate volume for you.
@@ -1060,6 +1065,8 @@ Change the list of sources in `Simulation.sources` to `new_sources`, and changes
 —
 This can be called in a step function, and is useful for changing the geometry or default material as a function of time.
 
+<a name="FluxSpectra"></a>
+
 ### Flux Spectra
 
 Given a bunch of [`FluxRegion`](#fluxregion) objects, you can tell Meep to accumulate the Fourier transforms of the fields in those regions in order to compute flux spectra. See also the [Introduction](Introduction.md#transmittancereflectance-spectra) and [Tutorial/Basics](Python_Tutorials/Basics.md#transmittance-spectrum-of-a-waveguide-bend). These are attributes of the `Simulation` class. The most important function is:
@@ -1086,6 +1093,7 @@ You might have to do something lower-level if you have multiple flux regions cor
 —
 Given a flux object, returns a list of the frequencies that it is computing the spectrum for.
 
+<a name="get_fluxes"></a>
 **`get_fluxes(flux)`**
 —
 Given a flux object, returns a list of the current flux spectrum that it has accumulated.
@@ -1135,6 +1143,7 @@ Scale the Fourier-transformed fields in `flux` by the complex number `s`. e.g. `
 
 Given a structure, Meep can decompose the Fourier-transformed fields into a superposition of its harmonic modes. For a theoretical background, see [Mode Decomposition](Mode_Decomposition.md).
 
+<a name="get_eigenmode_coefficients"></a>
 **`get_eigenmode_coefficients(flux, bands, eig_parity=mp.NO_PARITY, eig_vol=None, eig_resolution=0, eig_tolerance=1e-12, kpoint_func=None, verbose=False)`**
 —
 Given a flux object and list of band indices, return a `namedtuple` with the following fields:
@@ -1503,6 +1512,8 @@ fr = mp.FluxRegion(volume=mp.GDSII_vol(fname, layer, zmin, zmax))
 —
 Displays an interactive image of how the cell is divided into chunks. Each rectangular region is a chunk, and each color represents a different processor. Requires [matplotlib](https://matplotlib.org).
 
+<a name="RunStepFunctions"></a>
+
 Run and Step Functions
 ----------------------
 
@@ -1628,6 +1639,8 @@ For convenience, the following wrappers for `get_array` over the entire cell are
 **`get_dft_array(dft_obj, component, num_freq)`**
 —
 Returns the Fourier-transformed fields as a NumPy array.
+
+<a name="dft_obj"></a>
 
 + `dft_obj`: a `dft_flux`, `dft_force`, `dft_fields`, or `dft_near2far` object obtained from calling the appropriate `add` function (e.g., `mp.add_flux`).
 
